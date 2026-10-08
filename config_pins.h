@@ -1,0 +1,71 @@
+#pragma once
+#include <Arduino.h>
+
+
+
+// Waveshare ESP32-S3-ETH-8DI-8RO pin map (Waveshare Wiki)
+//
+// Relays are driven by TCA9554 (EXIO1..EXIO8)
+// Digital inputs are on GPIO4..GPIO11
+// WS2812 RGB LED is on GPIO38
+//
+// RTC chip PCF85063 exists on board; I2C is on GPIO41/42 on this board family.
+
+#define INPUT1_PIN 4
+#define INPUT2_PIN 5
+#define INPUT3_PIN 6
+#define INPUT4_PIN 7
+#define INPUT5_PIN 8
+#define INPUT6_PIN 9
+#define INPUT7_PIN 10
+#define INPUT8_PIN 11
+
+// I2C (shared bus for RTC + IO expander)
+#define I2C_SCL_PIN 41
+#define I2C_SDA_PIN 42
+#define I2C_FREQ_HZ 100000
+
+// RGB + buzzer
+#define RGB_LED_PIN 38
+#define BUZZER_PIN 46
+
+// The onboard buzzer is a passive piezo element. It must be driven by PWM/tone,
+// not by a static HIGH level. 2 kHz is a clear, reliable default for this board.
+#ifndef BUZZER_TONE_HZ
+#define BUZZER_TONE_HZ 2000
+#endif
+
+#ifndef BUZZER_PWM_RESOLUTION_BITS
+#define BUZZER_PWM_RESOLUTION_BITS 8
+#endif
+
+// DS18B20 (OneWire) sběrnice
+// - ESP32-S3-ETH-8DI-8RO: GPIO0..GPIO3 (pevně)
+#define DS18B20_PIN_1 0
+#define DS18B20_PIN_2 1
+#define DS18B20_PIN_3 2
+#define DS18B20_PIN_4 3
+
+#define DALLAS_IO0_PIN DS18B20_PIN_1
+#define DALLAS_IO1_PIN DS18B20_PIN_2
+#define DALLAS_IO2_PIN DS18B20_PIN_3
+#define DALLAS_IO3_PIN DS18B20_PIN_4
+
+// Role-specific default busses (requested wiring)
+// - GPIO0: 3x DS18B20 pro směšovací ventil (port A / B / AB)
+// - GPIO3: 3x DS18B20 akumulační nádrž (top/mid/bottom)
+// - GPIO2: DS18B20 return (zpátečka do kotle)
+// - GPIO1: DS18B20 dhw_return (zpátečka cirkulace TUV)
+#define DALLAS_MIX_PIN DALLAS_IO0_PIN
+#define DALLAS_TANK_PIN DALLAS_IO3_PIN
+#define DALLAS_RETURN_PIN DALLAS_IO2_PIN
+#define DALLAS_DHW_RETURN_PIN DALLAS_IO1_PIN
+
+// TCA9554 default I2C address on many boards
+#ifndef TCA9554_ADDR
+#define TCA9554_ADDR 0x20
+#endif
+
+// OpenTherm adapter (default suggestion)
+#define OT_TX_PIN 47
+#define OT_RX_PIN 48
