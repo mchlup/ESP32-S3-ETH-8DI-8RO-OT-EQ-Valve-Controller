@@ -68,8 +68,8 @@ struct EquithermConfig {
   uint8_t nightRelayIndex = 5; // R6
   bool nightRelayOnWhenNight = true;
 
-  // Kept only for backwards compatible configuration import/export. It no
-  // longer changes the valve target and is not part of valve regulation.
+  // Boiler-only temperature boost for COMFORT (DAY): the boiler OpenTherm
+  // CH setpoint is raised by deltaC, while the mixing target stays unchanged.
   bool boilerAssistEnabled = false;
   float boilerAssistDeltaC = 5.0f;
   bool boilerAssistForceChEnable = false;
