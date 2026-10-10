@@ -529,6 +529,7 @@
       if(location.hash !== `#${view}`) location.hash = view;
 
       updatePendingSaveBar();
+      try{ window.ThermaV5?.onView(view, state); }catch(_e){}
       thermaCloseMenus();
       const moreBtn=document.getElementById("btnMobileMore");
       if(moreBtn)moreBtn.setAttribute("aria-current",["accu","opentherm","thermometers","io","diag"].includes(view)?"page":"false");
@@ -4433,6 +4434,7 @@ async function serviceIoCall(payload){
       if(!fast || typeof fast !== "object") return;
       const firstFast = !(state.fast || state.last);
       state.fast = mergeFastSnapshot(state.fast, fast);
+      try{ window.ThermaV5?.onFast(state); }catch(_e){}
       thermaSetConnection("good", state.ws?.připojeno ? "WebSocket • živá data" : "API • aktuální data");
       applyFastToState(state.fast);
       state.net = state.net || {};
@@ -6676,6 +6678,7 @@ function boot(){
   setText("#dBuild", "UI 2026");
   if(!Number.isFinite(Number(state.ot.maxCapacityKw))) state.ot.maxCapacityKw = 9;
 
+  try{ window.ThermaV5?.init(); }catch(e){ console.error("THERMA 5 init:",e); }
   wire();
   thermaInitShell();
   installPendingSaveTracking();
