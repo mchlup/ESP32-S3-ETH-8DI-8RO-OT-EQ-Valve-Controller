@@ -1621,6 +1621,7 @@ function circPulseIsOn(nowMs, intervalStartMin){
           row.querySelector("[data-edit]").addEventListener("click", () => openEditor(idx));
           row.querySelector("[data-del]").addEventListener("click", () => {
             sched[selected].splice(idx,1);
+            markPendingSaveDirty(key === "heatingDay" ? "heatPlan" : "dhwPlan");
             saveSchedules();
             updatePlannerStateBadges();
             refreshDay();
@@ -1679,6 +1680,7 @@ function circPulseIsOn(nowMs, intervalStartMin){
           if(key === "heatingDay" && next.length > HEATING_MAX_INTERVALS_PER_DAY){ toast("Plán topení", `Maximálně ${HEATING_MAX_INTERVALS_PER_DAY} intervalů za den.`, "⚠"); return; }
           if(intervalsOverlap(next)){ toast("Plán", "Intervaly se překrývají.", "⚠"); return; }
           sched[selected] = next;
+          markPendingSaveDirty(key === "heatingDay" ? "heatPlan" : "dhwPlan");
           saveSchedules();
           refreshDay();
           toast("Plán", "Uloženo.", "✅");
@@ -1689,6 +1691,7 @@ function circPulseIsOn(nowMs, intervalStartMin){
         });
         document.getElementById(`pDelete_${key}`).addEventListener("click", () => {
           sched[selected].splice(idx,1);
+          markPendingSaveDirty(key === "heatingDay" ? "heatPlan" : "dhwPlan");
           saveSchedules();
           editor.style.display = "none";
           refreshDay();
@@ -1706,6 +1709,7 @@ function circPulseIsOn(nowMs, intervalStartMin){
         const next = [...sched[selected], {start:"06:00", end:"07:00"}];
         if(intervalsOverlap(next)){ toast("Plán", "Nový interval se překrývá se stávajícím.", "⚠"); return; }
         sched[selected] = next;
+        markPendingSaveDirty(key === "heatingDay" ? "heatPlan" : "dhwPlan");
         saveSchedules();
         refreshDay();
         toast("Plán", `${daysCZ[selected]}: přidán interval.`, "🗓");
@@ -2072,6 +2076,7 @@ function renderThermometersDevice(){
     valTd.textContent = formatRoleUiState(role);
 
     sel.addEventListener("change", () => {
+      markPendingSaveDirty("dallas");
       state.th.roles[role] = sel.value || "";
       valTd.textContent = formatRoleUiState(role);
     });
@@ -2220,6 +2225,7 @@ async function bleSave(){
     if(!payload.namePrefix) throw new Error("Prefix názvu BLE zařízení nesmí být prázdný.");
     if(btn) btn.disabled = true;
     await api.postConfigSection("ble", payload);
+    clearPendingSaveDirty("ble");
     state.th.bleCfg = payload;
     try{ state.th.ble = await api.getJson("/api/ble/status", 2500); }catch(_e){}
     renderThermometersDevice();
@@ -2247,6 +2253,7 @@ async function thermoSave(){
       roles: normalizeDallasRolesMap(state.th.roles),
       mixingValve: state.th.mixingValve,
     });
+    clearPendingSaveDirty("dallas");
     toast("Teploměry", "Uloženo do zařízení.", "✅");
     await thermoLoad();
   }catch(e){
@@ -2397,6 +2404,7 @@ async function thermoSave(){
     }
 
     function mqttApplyConfigToForm(cfgLike, statusLike=null){
+      if(isPendingSaveDirty("mqtt")) return;
       const cfg = (cfgLike && cfgLike.mqtt) ? cfgLike.mqtt : (cfgLike || {});
       const status = (statusLike && statusLike.mqtt) ? statusLike.mqtt : (statusLike || {});
       const ha = cfg.homeAssistant || status.homeAssistant || {};
@@ -2503,6 +2511,7 @@ async function thermoSave(){
       if(pw.trim().length) payload.mqtt.password = pw;
       mqttSetBadge("warn", "MQTT: ukládám…");
       await api.postConfigSection("mqtt", payload.mqtt);
+      clearPendingSaveDirty("mqtt");
       state.mqtt.loaded = false;
       await mqttLoad({ silent:true });
       toast("MQTT", "Nastavení uloženo. MQTT runtime byl znovu načten.", "✅");
@@ -4078,7 +4087,7 @@ async function otRwWrite(){
     }
 
     function applyOtConfigToForm(cfg){
-      if(!cfg) return;
+      if(!cfg || isPendingSaveDirty("ot")) return;
       state.ot.cfg = state.ot.cfg || {};
       state.ot.cfg.enabled = !!cfg.enabled;
       state.ot.cfg.enable = state.ot.cfg.enabled;
@@ -4107,6 +4116,7 @@ async function otRwWrite(){
     }
 
 function applyAlertsConfigToForm(cfg){
+  if(isPendingSaveDirty("pressure")) return;
   const src = cfg?.alerts?.pressure || cfg?.pressure || {};
   state.alerts = state.alerts || {};
   state.alerts.pressure = Object.assign({}, state.alerts.pressure || {}, {
@@ -4131,6 +4141,7 @@ function applyAlertsConfigToForm(cfg){
 }
 
 function applyTimeConfigToForm(cfg){
+  if(isPendingSaveDirty("time")) return;
   const src = cfg?.time || cfg || {};
   const ntp = Array.isArray(src.ntp) ? src.ntp : [];
   const en = document.getElementById("timeEnable");
@@ -4172,6 +4183,7 @@ async function timeSave(){
     ].filter(Boolean)
   };
   await api.postConfigSection("time", payload);
+  clearPendingSaveDirty("time");
   await timeLoad({ silent:true });
   await refresh(false);
   toast("Čas", "Nastavení uloženo.", "✅");
@@ -4242,6 +4254,7 @@ async function serviceIoCall(payload){
 
     function applyDhwConfigToForm(cfg){
       if(!cfg) return;
+      if(isPendingSaveDirty("dhw") || isPendingSaveDirty("dhwPlan")) return;
       state.dev = state.dev || {};
       state.dev.dhwCfgRaw = cfg;
       const heat = cfg.heat || {};
@@ -5232,6 +5245,8 @@ async function serviceIoCall(payload){
     async function dhwReloadConfigFromDevice(){
       const cfg = await api.fetchConfigSection("dhw");
       if(cfg){
+        clearPendingSaveDirty("dhw");
+        clearPendingSaveDirty("dhwPlan");
         state.dhwCfg = cfg;
         state.dev = state.dev || {};
         state.dev.dhwCfgRaw = cfg;
@@ -5291,6 +5306,8 @@ async function serviceIoCall(payload){
         }
       }};
       await api.postConfigSection("dhw", payload.dhw);
+      clearPendingSaveDirty("dhw");
+      clearPendingSaveDirty("dhwPlan");
       state.dev = state.dev || {};
       state.dev.dhwCfgRaw = payload.dhw;
       state.dhwCfg = payload.dhw;
@@ -5532,6 +5549,7 @@ async function refresh(forceToast=false){
           week,
         }
       });
+      clearPendingSaveDirty("heatPlan");
       state.dev = state.dev || {};
       state.dev.eqCfgLoaded = false;
     }
@@ -5554,6 +5572,7 @@ async function refresh(forceToast=false){
           schedule: { week: serializeDhwWeek("dhwCirc") }
         }
       });
+      clearPendingSaveDirty("dhwPlan");
     }
 
     async function syncAllPlannersToDevice(){
@@ -6129,6 +6148,7 @@ updatePlannerStateBadges();
               boilerControl: mode === "control" ? "opentherm" : "relay",
               allowRawWrite
             });
+            clearPendingSaveDirty("ot");
             toast("OpenTherm", "Nastavení uloženo do zařízení.", "✅");
             log(`ot cfg -> /api/config/opentherm enabled=${enabled} pollMs=${pollMs} mode=${mode} raw=${allowRawWrite}`);
             state.dev = state.dev || {};
@@ -6150,6 +6170,7 @@ updatePlannerStateBadges();
             const maxBar = clamp(Number($("#pressAlarmMax")?.value ?? 2.8), 0.1, 6.0);
             const hysteresisBar = clamp(Number($("#pressAlarmHys")?.value ?? 0.05), 0.01, 1.0);
             await api.postConfigSection("alerts", { pressure: { enabled, minBar, maxBar, hysteresisBar } });
+            clearPendingSaveDirty("pressure");
             applyAlertsConfigToForm({ pressure: { enabled, minBar, maxBar, hysteresisBar }});
             toast("Alarm tlaku", "Nastavení uloženo do zařízení.", "✅");
             log(`pressure alarm -> /api/config/alerts enabled=${enabled} min=${minBar} max=${maxBar} hys=${hysteresisBar}`);
@@ -6262,6 +6283,7 @@ updatePlannerStateBadges();
       $("#apiSave").addEventListener("click", () => {
         state.apiBase = $("#apiBase").value.trim();
         localStorage.setItem("ui2026_apiBase", state.apiBase);
+        clearPendingSaveDirty("api");
         syncApiBaseUi();
         toast("Uloženo", "Base URL nastaveno.", "✅");
         log(`apiBase set to: ${state.apiBase || "(origin)"}`);
