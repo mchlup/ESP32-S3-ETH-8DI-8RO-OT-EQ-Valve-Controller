@@ -1725,8 +1725,9 @@ namespace {
       Serial.printf("[WEB] First boot import from LittleFS complete (%u applied, snapshot=%s)\n",
                     (unsigned)applied, snapshotOk ? "ok" : "failed");
     }
+    // Reuse the Preferences instance declared at the beginning of this function.
+    // It has already been closed with end(), so begin() can open it again.
     // Do not repeatedly import old files on subsequent boots.
-    Preferences bootPrefs;
     if (bootPrefs.begin("bootcfg", false)) {
       bootPrefs.putBool("nvs_ready", true);
       bootPrefs.end();
