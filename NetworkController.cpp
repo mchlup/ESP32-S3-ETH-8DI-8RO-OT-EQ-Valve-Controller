@@ -18,6 +18,7 @@
 #include "ConfigStore.h"
 #include "RtcController.h"
 #include <sys/time.h>
+#include <esp_sntp.h>
 
 // ETH_PHY_W5500 is an enum value in Arduino-ESP32, not a preprocessor macro.
 // Testing it with defined(ETH_PHY_W5500) therefore always evaluated to false
@@ -57,7 +58,12 @@ namespace {
   static String s_timeSource = "none";
   static bool s_rtcAvailable = false;
   static time_t s_lastRtcWritten = 0;
-  static bool s_timeNeedsRtcWrite = false;
+  static volatile bool s_timeNeedsRtcWrite = false;
+  static volatile bool s_ntpSynchronized = false;
+  static void onSntpSync(struct timeval*) {
+    s_ntpSynchronized = true;
+    s_timeNeedsRtcWrite = true;
+  }
 
   static bool s_timeEnabled = true;
   static String s_tz = "CET-1CEST,M3.5.0,M10.5.0/3";
@@ -208,6 +214,7 @@ namespace {
     // configTime starts asynchronous SNTP. LAN IP access is sufficient; DNS or
     // internet is not necessary when a local NTP IP is configured.
     // configTime expects UTC offset and DST; we use TZ env instead -> pass 0,0.
+    sntp_set_time_sync_notification_cb(onSntpSync);
     configTime(0, 0,
                s_ntp1.c_str(),
                s_ntp2.length() ? s_ntp2.c_str() : nullptr,
@@ -226,6 +233,7 @@ namespace {
     // Consider valid if after 2023-01-01
     s_timeValid = (now > (time_t)1672531200);
     if (!s_timeValid) return;
+    if (s_ntpSynchronized) s_timeSource = "sntp";
     if (s_timeNeedsRtcWrite && s_rtcAvailable &&
         (s_lastRtcWritten == 0 || now - s_lastRtcWritten >= 3600)) {
       if (rtcSetEpoch(now)) { s_lastRtcWritten = now; s_timeNeedsRtcWrite = false; }
