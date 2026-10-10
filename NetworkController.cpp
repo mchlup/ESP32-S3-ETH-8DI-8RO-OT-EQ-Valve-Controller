@@ -204,9 +204,15 @@ namespace {
     setenv("TZ", s_tz.c_str(), 1);
     tzset();
     if (!s_timeEnabled) {
+      if (s_timeConfigured) {
+        esp_sntp_stop();
+        s_ntpSynchronized = false;
+        s_timeNeedsRtcWrite = false;
+      }
       s_timeConfigured = false;
       updateTimeValidity();
       if (!s_timeValid) s_timeSource = "disabled";
+      else if (s_timeSource == "sntp") s_timeSource = "system";
       return;
     }
     if (!anyIpConnected()) return;
