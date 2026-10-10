@@ -4434,9 +4434,9 @@ async function serviceIoCall(payload){
       if(!fast || typeof fast !== "object") return;
       const firstFast = !(state.fast || state.last);
       state.fast = mergeFastSnapshot(state.fast, fast);
-      try{ window.ThermaV5?.onFast(state); }catch(_e){}
       thermaSetConnection("good", state.ws?.připojeno ? "WebSocket • živá data" : "API • aktuální data");
       applyFastToState(state.fast);
+      try{ window.ThermaV5?.onFast(state); }catch(_e){}
       state.net = state.net || {};
       state.net.lastFastOkMs = Date.now();
       const sample = getUiSample();
