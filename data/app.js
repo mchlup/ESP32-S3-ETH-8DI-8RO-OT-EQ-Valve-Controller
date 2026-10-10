@@ -3892,6 +3892,23 @@ async function otRwWrite(){
     }
 
     function getEqChartConfig(){
+      // The heating editor is authoritative for its own immediate preview.
+      // Reading values from the mixing-valve form here previously made the
+      // visible comfort/night curve ignore the slope and offset being edited.
+      if(getActiveView() === "heating" && document.getElementById("hDaySlope")){
+        const number = (id, fallback) => {
+          const n = Number.parseFloat(document.getElementById(id)?.value ?? "");
+          return Number.isFinite(n) ? n : fallback;
+        };
+        const minFlowC=number("hMin",22),maxFlowC=number("hMax",60);
+        return {
+          curveMode:"linear2",
+          dayCurve:{slope:number("hDaySlope",1),shift:number("hDayShift",0)},
+          nightCurve:{slope:number("hNightSlope",.7),shift:number("hNightShift",-5)},
+          minFlowC:Math.min(minFlowC,maxFlowC),
+          maxFlowC:Math.max(minFlowC,maxFlowC)
+        };
+      }
       const defaults = {
         curveMode: "linear2",
         dayCurve: { slope: 1.0, shift: 0 },
