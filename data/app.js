@@ -412,6 +412,101 @@
       queueRenderSample(getUiSample());
     }
 
+
+    // Floating save dock: tracked by the section that was actually edited.
+    // Telemetry changes never trigger it, only user input / committed planner edits.
+    const pendingSaveDef = {
+      eq:       { view:"heating", label:"Topení", button:"#hApply" },
+      heatPlan: { view:"heating", label:"Plán topení", button:'[data-pl-save="heatingDay"]' },
+      mixing:   { view:"mixing", label:"Směšovací ventil", button:"#hMixSave" },
+      dhw:      { view:"dhw", label:"Nastavení TUV", button:"#dhwSaveCfg" },
+      dhwPlan:  { view:"dhw", label:"Plány TUV", button:'[data-pl-save="dhwHeat"]' },
+      ot:       { view:"opentherm", label:"OpenTherm", button:"#otCfgApply" },
+      pressure: { view:"opentherm", label:"Alarm tlaku", button:"#pressAlarmApply" },
+      dallas:   { view:"thermometers", label:"Teploměry", button:"#thSave" },
+      ble:      { view:"thermometers", label:"BLE", button:"#bleSave" },
+      mqtt:     { view:"diag", label:"MQTT", button:"#mqttSave" },
+      time:     { view:"diag", label:"Čas a NTP", button:"#timeSave" },
+      api:      { view:"diag", label:"API adresa", button:"#apiSave" },
+    };
+    const pendingSaveDirty = new Set();
+    function isPendingSaveDirty(key){ return pendingSaveDirty.has(key); }
+    function updatePendingSaveBar(){
+      const dock = document.getElementById("pendingSaveBar");
+      const actions = document.getElementById("pendingSaveActions");
+      if(!dock || !actions) return;
+      const view = getActiveView();
+      const keys = Object.keys(pendingSaveDef).filter(k =>
+        pendingSaveDirty.has(k) && pendingSaveDef[k].view === view);
+      dock.hidden = keys.length === 0;
+      if(!keys.length){ actions.replaceChildren(); return; }
+      const summary = document.getElementById("pendingSaveSummary");
+      if(summary) summary.textContent = keys.length === 1
+        ? pendingSaveDef[keys[0]].label + " – změny čekají na uložení"
+        : keys.length + " samostatné části konfigurace čekají na uložení";
+      actions.replaceChildren();
+      for(const key of keys){
+        const def = pendingSaveDef[key];
+        const action = document.createElement("button");
+        action.type = "button";
+        action.className = "btn primary";
+        action.textContent = keys.length === 1 ? "Uložit změny" : "Uložit: " + def.label;
+        action.title = "Uložit " + def.label + " do zařízení";
+        action.addEventListener("click", () => {
+          const source = document.querySelector(def.button);
+          if(!source || source.disabled) return;
+          source.click(); // Reuse validated page-specific save handler.
+        });
+        actions.appendChild(action);
+      }
+    }
+    function markPendingSaveDirty(key){
+      if(!pendingSaveDef[key]) return;
+      pendingSaveDirty.add(key);
+      updatePendingSaveBar();
+    }
+    function clearPendingSaveDirty(key){
+      pendingSaveDirty.delete(key);
+      updatePendingSaveBar();
+    }
+    function saveGroupForUserEdit(target){
+      if(!target || !target.matches || !target.matches("input,select,textarea")) return null;
+      if(target.disabled || target.readOnly || target.type === "file" || target.closest("#setupWizard")) return null;
+      const view = target.closest(".section")?.id?.replace(/^view-/, "");
+      const id = target.id || "";
+      if(view === "heating" || view === "mixing") return null; // Existing precise dirty tracking.
+      if(view === "dhw"){
+        if(id === "dhwCirc" || id === "dhwValve") return null; // Live immediate switches.
+        if(id.startsWith("dhw")) return "dhw";
+        if(["circPulseEnable","circPulseOn","circPulseOff"].includes(id)) return "dhwPlan";
+      }
+      if(view === "opentherm"){
+        if(["otEnable","otPoll","otFailMode","otLog"].includes(id)) return "ot";
+        if(id.startsWith("pressAlarm")) return "pressure";
+      }
+      if(view === "thermometers"){
+        if(["bleEnable","bleNamePrefix","bleScanIntervalMs"].includes(id)) return "ble";
+        if(id === "dallasEnable" || id.startsWith("mixTempSource") || target.closest("#thMapTbl")) return "dallas";
+      }
+      if(view === "diag"){
+        if(["mqttEnable","mqttHost","mqttPort","mqttUser","mqttPassword","mqttClearPassword",
+             "mqttClientId","mqttBaseTopic","mqttPublishIntervalMs","mqttHaEnable",
+             "mqttHaDiscovery","mqttDiscoveryPrefix","mqttNodeId"].includes(id)) return "mqtt";
+        if(["timeEnable","timeTz","timeNtp1","timeNtp2","timeNtp3"].includes(id)) return "time";
+        if(id === "apiBase") return "api";
+      }
+      return null;
+    }
+    function installPendingSaveTracking(){
+      const mark = ev => {
+        const group = saveGroupForUserEdit(ev.target);
+        if(group) markPendingSaveDirty(group);
+      };
+      document.addEventListener("input", mark, true);
+      document.addEventListener("change", mark, true);
+      updatePendingSaveBar();
+    }
+
     function setView(view){
       const currentView = getActiveView();
       const changing = currentView !== view;
@@ -432,6 +527,7 @@
 
       if(location.hash !== `#${view}`) location.hash = view;
 
+      updatePendingSaveBar();
       if(changing) log(`view -> ${view}`);
       if(view === "opentherm") { void otScanRefresh(); void otProfileRefresh(); }
       if(view === "diag") { void mqttLoad({ silent:true }); }
@@ -3795,16 +3891,18 @@ async function otRwWrite(){
 
     function eqConfigInputIds(){
       return [
-        "hEqEnabled","hDaySlope","hDayShift","hNightSlope","hNightShift","hMin","hMax",
+        "hDaySlope","hDayShift","hNightSlope","hNightShift","hMin","hMax",
         "hWrite57","hBoilerMax","hEqModeCfg","hUseIn1NightOverride",
         "hSummerModeEnabled","hSummerOffAboveC","hSummerOnBelowC","hDriveNightRelay","hNightRelay",
-        "hNightRelayOnWhenNight","hBoilerAssistEnabled","hBoilerAssistForceChEnable"
+        "hNightRelayOnWhenNight","hBoilerAssistEnabled","hBoilerAssistDeltaC","hBoilerAssistForceChEnable"
       ];
     }
 
     function setEqConfigDirty(v){
       state.ui = state.ui || {};
       state.ui.eqConfigDirty = !!v;
+      if(v) markPendingSaveDirty("eq");
+      else clearPendingSaveDirty("eq");
     }
 
     function mixConfigInputIds(){
@@ -3826,6 +3924,8 @@ async function otRwWrite(){
     function setMixConfigDirty(v){
       state.ui = state.ui || {};
       state.ui.mixConfigDirty = !!v;
+      if(v) markPendingSaveDirty("mixing");
+      else clearPendingSaveDirty("mixing");
     }
 
     function applyEqConfigToForm(cfg, options={}){
@@ -3863,6 +3963,7 @@ async function otRwWrite(){
       if(document.getElementById("hNightRelay") && Number.isFinite(Number(cfg?.output?.nightRelay))) document.getElementById("hNightRelay").value = String(Number(cfg.output.nightRelay));
       setInputBool("hNightRelayOnWhenNight", cfg?.output?.nightRelayOnWhenNight);
       setInputBool("hBoilerAssistEnabled", cfg?.boilerAssist?.enabled);
+      setInputNumber("hBoilerAssistDeltaC", cfg?.boilerAssist?.deltaC ?? 5, 1);
       setInputBool("hBoilerAssistForceChEnable", cfg?.boilerAssist?.forceChEnable);
 
       if(document.getElementById("eqMode") && cfg?.mode) document.getElementById("eqMode").value = String(cfg.mode);
@@ -4672,7 +4773,7 @@ async function serviceIoCall(payload){
     function renderDhwBoilerMode(){
       const active = isBoilerDhwModeActive();
       setText("#dhwBoilerMode", active ? "ANO" : "NE");
-      setBadge("#bDhwOtMode", active ? "warn" : "", `Kotel TUV přes OT: ${active ? "ANO" : "NE"}`);
+      setBadge("#bDhwOtMode", active ? "warn" : "", `TUV přes OT: ${active ? "ano" : "ne"}`);
     }
 
     function evaluateHealth(){
@@ -5708,7 +5809,7 @@ async function refresh(forceToast=false){
 
 
       // live update equitherm chart when heating inputs change
-      ["hDaySlope","hDayShift","hNightSlope","hNightShift","hMin","hMax","hBoilerMax","hTarget","eqSet","hMixCurveMode","hMixDay2OutCold","hMixDay2FlowCold","hMixDay2OutWarm","hMixDay2FlowWarm","hMixNight2OutCold","hMixNight2FlowCold","hMixNight2OutWarm","hMixNight2FlowWarm","hMixDayM20","hMixDayM10","hMixDay0","hMixDayP10","hMixNightM20","hMixNightM10","hMixNight0","hMixNightP10","hMixCurveMinFlow","hMixCurveMaxFlow","hEqModeCfg","hUseIn1NightOverride","hSummerModeEnabled","hSummerOffAboveC","hSummerOnBelowC","hDriveNightRelay","hNightRelay","hNightRelayOnWhenNight","hBoilerAssistEnabled","hBoilerAssistForceChEnable"].forEach(id => {
+      ["hDaySlope","hDayShift","hNightSlope","hNightShift","hMin","hMax","hBoilerMax","hTarget","eqSet","hMixCurveMode","hMixDay2OutCold","hMixDay2FlowCold","hMixDay2OutWarm","hMixDay2FlowWarm","hMixNight2OutCold","hMixNight2FlowCold","hMixNight2OutWarm","hMixNight2FlowWarm","hMixDayM20","hMixDayM10","hMixDay0","hMixDayP10","hMixNightM20","hMixNightM10","hMixNight0","hMixNightP10","hMixCurveMinFlow","hMixCurveMaxFlow","hEqModeCfg","hUseIn1NightOverride","hSummerModeEnabled","hSummerOffAboveC","hSummerOnBelowC","hDriveNightRelay","hNightRelay","hNightRelayOnWhenNight","hBoilerAssistEnabled","hBoilerAssistDeltaC","hBoilerAssistForceChEnable"].forEach(id => {
         const el = document.getElementById(id);
         if(!el) return;
         el.addEventListener("input", redrawEquithermViewsDebounced);
@@ -5900,8 +6001,12 @@ updatePlannerStateBadges();
             nightRelay: Number($("#hNightRelay")?.value || 6),
             nightRelayOnWhenNight: !!$("#hNightRelayOnWhenNight")?.checked,
           };
+          const deltaC = Number.parseFloat($("#hBoilerAssistDeltaC")?.value ?? "");
+          if(!Number.isFinite(deltaC) || deltaC < 0 || deltaC > 20)
+            throw new Error("Navýšení teploty kotle musí být v rozsahu 0–20 °C.");
           const boilerAssist = {
             enabled: !!$("#hBoilerAssistEnabled")?.checked,
+            deltaC,
             forceChEnable: !!$("#hBoilerAssistForceChEnable")?.checked,
           };
           const mode = String($("#hEqModeCfg")?.value || $("#eqMode")?.value || "auto");
@@ -6263,6 +6368,7 @@ const tooltipHelpById = {
   hMax: "Nejvyšší dovolená požadovaná teplota topné vody vypočtená ekvitermem.",
   hWrite57: "Povolí zápis maximální teploty topné vody do OpenTherm Data-ID 57, pokud jej kotel podporuje.",
   hBoilerMax: "Hodnota maximální teploty CH odesílaná kotli přes OpenTherm Data-ID 57.",
+  hBoilerAssistDeltaC: "Navýšení požadované teploty kotle přes OpenTherm ID 1 oproti ekvitermní teplotě v režimu komfort. Nemění cílovou teplotu směšovacího ventilu a podléhá maximálním limitům kotle.",
   hMixEnabled: "Hlavní povolení nové automatiky směšovacího ventilu. Po prvním povolení bez známé polohy firmware nejprve vytvoří referenci přejezdem do B / 0 %.",
   hMixDisabledAction: "Určuje, co má ventil udělat při vypnuté automatice: zůstat v aktuální poloze, nebo zajet na kraj B / A.",
   hMixNoHeatAction: "Bez dostatečné tepelné rezervy v akumulační nádrži se automatická regulace zastaví a použije tuto bezpečnou polohu.",
@@ -6413,6 +6519,7 @@ function boot(){
   if(!Number.isFinite(Number(state.ot.maxCapacityKw))) state.ot.maxCapacityKw = 9;
 
   wire();
+  installPendingSaveTracking();
   initConfigTooltips();
   renderHeatingOtInfo();
   renderMixCalibrationInfo();
