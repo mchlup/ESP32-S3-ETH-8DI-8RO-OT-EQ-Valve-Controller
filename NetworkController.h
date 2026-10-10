@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include <time.h>
 
 // ---------------------------------------------------------------------------
 // NetworkController
@@ -35,6 +36,7 @@ String networkGetTimeIso();
 uint32_t networkGetTimeEpoch();
 String networkGetTimeSource();
 bool networkIsRtcPresent();
+bool networkSetTimeEpoch(time_t epoch);
 
 #else
 
@@ -51,5 +53,6 @@ inline String networkGetTimeIso() { return String(); }
 inline uint32_t networkGetTimeEpoch() { return 0; }
 inline String networkGetTimeSource() { return String("disabled"); }
 inline bool networkIsRtcPresent() { return false; }
+inline bool networkSetTimeEpoch(time_t) { return false; }
 
 #endif
