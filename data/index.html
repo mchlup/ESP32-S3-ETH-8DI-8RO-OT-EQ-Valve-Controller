@@ -1610,6 +1610,15 @@
                   <button class="btn primary" type="button" id="timeSave">Uložit</button>
                   <span class="muted mono" id="timeStatusText">--</span>
                 </div>
+                <div class="field" style="margin-top:12px">
+                  <label for="timeManualInput">Nastavit čas zařízení z tohoto počítače / mobilu (bez internetu)</label>
+                  <div class="row" style="align-items:center;flex-wrap:wrap">
+                    <input id="timeManualInput" type="datetime-local" step="1" style="min-width:220px;flex:1" />
+                    <button class="btn" id="timeManualNow" type="button">Aktuální čas zařízení prohlížeče</button>
+                    <button class="btn primary" id="timeManualSet" type="button">Nastavit čas ESP32 a RTC</button>
+                  </div>
+                  <div class="muted" style="margin-top:5px">NTP server může mít také lokální IP adresu (např. router/NAS). Ruční čas se uloží do RTC a zůstává platný bez přístupu k internetu.</div>
+                </div>
               </div>
             </details>
 
