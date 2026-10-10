@@ -1742,7 +1742,16 @@ namespace {
     if (deserializeJson(docIn, g_srv.arg("plain"))) { writeUploadJson(400, false, "bad_json"); return; }
     JsonObject root = docIn.as<JsonObject>();
     if (root.isNull()) { writeUploadJson(400, false, "bad_body"); return; }
-    applySectionByName(String(def->name), root);
+    if (String(def->name) == "mixing") {
+      String mixError;
+      if (!applyMixingSection(root, &mixError)) {
+        writeUploadJson(400, false, mixError.length() ? mixError : "invalid_mixing_configuration");
+        recordAdminAction(def->rateKey, false, "rejected_mixing");
+        return;
+      }
+    } else {
+      applySectionByName(String(def->name), root);
+    }
     const bool snapshotOk = saveConfigSnapshot();
     DynamicJsonDocument doc(192);
     doc["ok"] = true;
@@ -1764,7 +1773,7 @@ namespace {
 
   static void handleConfigApply() {
     if (rejectActionRateLimit("cfg_apply", 1000UL, 8, 60000UL, "config_apply_guard")) return;
-    DynamicJsonDocument docIn(16384);
+    DynamicJsonDocument docIn(49152);
     if (deserializeJson(docIn, g_srv.arg("plain"))) { writeUploadJson(400, false, "bad_json"); return; }
     JsonObject root = docIn.as<JsonObject>();
     if (root.isNull()) { writeUploadJson(400, false, "bad_body"); return; }
@@ -1782,7 +1791,7 @@ namespace {
 
   static void handleConfigImport() {
     if (rejectActionRateLimit("cfg_import", 1500UL, 4, 60000UL, "config_import_guard")) return;
-    DynamicJsonDocument docIn(16384);
+    DynamicJsonDocument docIn(49152);
     if (deserializeJson(docIn, g_srv.arg("plain"))) { writeUploadJson(400, false, "bad_json"); return; }
     JsonObject root = docIn.as<JsonObject>();
     if (root.isNull()) { writeUploadJson(400, false, "bad_body"); return; }
@@ -1862,17 +1871,26 @@ namespace {
       LittleFS.remove(tempPath);
       return false;
     }
+    File verify = LittleFS.open(tempPath, "r");
+    const bool fullWrite = verify && verify.size() == written;
+    if (verify) verify.close();
+    if (!fullWrite) { LittleFS.remove(tempPath); return false; }
 
-    if (LittleFS.exists(finalPath)) {
-      if (!LittleFS.remove(finalPath)) {
-        LittleFS.remove(tempPath);
-        return false;
-      }
-    }
-    if (!LittleFS.rename(tempPath, finalPath)) {
+    // Keep the previous copy until the new one is completely written.
+    // On an interrupted update the .bak file is still a recoverable snapshot.
+    const String backupPath = finalPath + ".bak";
+    if (LittleFS.exists(backupPath)) LittleFS.remove(backupPath);
+    const bool existed = LittleFS.exists(finalPath);
+    if (existed && !LittleFS.rename(finalPath, backupPath)) {
       LittleFS.remove(tempPath);
       return false;
     }
+    if (!LittleFS.rename(tempPath, finalPath)) {
+      if (existed) LittleFS.rename(backupPath, finalPath);
+      LittleFS.remove(tempPath);
+      return false;
+    }
+    if (existed) LittleFS.remove(backupPath);
     return true;
   }
 
