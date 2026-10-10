@@ -412,6 +412,9 @@
     function redrawEquithermViews(){
       queueRenderSample(getUiSample());
     }
+    // Expose only a safe re-render trigger to the separate layout module.
+    // No additional polling and no changes to the backend are introduced.
+    window.thermaRedrawEquitherm = redrawEquithermViews;
 
 
     // Floating save dock: tracked by the section that was actually edited.
@@ -1983,9 +1986,12 @@ function renderMixTempSourceSelectors(){
       option.textContent = `${cfg[port]} (uložený neznámý zdroj)`;
       el.appendChild(option);
     }
-    el.value = cfg[port];
+    // Never overwrite an in-progress selection while the user is editing.
+    if(document.activeElement !== el && el.dataset.unsavedSource !== "1") el.value = cfg[port];
     el.onchange = () => {
       state.th.mixingValve[port] = String(el.value || "none");
+      el.dataset.unsavedSource = "1";
+      markPendingSaveDirty("dallas");
     };
   }
   setText("#mixTempLiveA", formatMixPortLive("a"));
@@ -2051,6 +2057,9 @@ function renderThermometersDevice(){
   const dsCnt = document.getElementById("thDsCnt");
   if(dsCnt) dsCnt.textContent = `${dsList.length} ks`;
 
+  // Full DOM rebuild is permitted only on explicit load/save. Do not refresh
+  // this editor from live WebSocket or periodic /api/fast updates.
+  if(isPendingSaveDirty("dallas") && !state.th?.forceEditorHydration) return;
   tbl.innerHTML = "";
   for(const meta of (state.th.roleMeta?.length ? state.th.roleMeta : dallasRoleMetaDefault)){
     const role = meta.key;
@@ -2260,6 +2269,10 @@ async function thermoSave(){
       mixingValve: state.th.mixingValve,
     });
     clearPendingSaveDirty("dallas");
+    ["mixTempSourceA","mixTempSourceB","mixTempSourceAB"].forEach(id => {
+      const control=document.getElementById(id);
+      if(control) delete control.dataset.unsavedSource;
+    });
     toast("Teploměry", "Uloženo do zařízení.", "✅");
     await thermoLoad();
   }catch(e){
@@ -4444,7 +4457,14 @@ async function serviceIoCall(payload){
       if(firstFast){
         try{ document.dispatchEvent(new CustomEvent("ui:first-fast")); }catch(_e){}
       }
-      if(state.th?.loaded && getActiveView() === "thermometers") renderThermometersDevice();
+      // Sensor editors are persistent DOM controls. Replacing their rows on
+      // every live frame destroys an open native select and unsaved choices.
+      // Update only text-only live status from this fast snapshot.
+      if(state.th?.loaded && getActiveView() === "thermometers"){
+        for(const [port,id] of [["a","mixTempLiveA"],["b","mixTempLiveB"],["ab","mixTempLiveAB"]]){
+          setText("#"+id, formatMixPortLive(port));
+        }
+      }
     }
 
     function getAfterMixTempFromTemps(temps){
@@ -5006,7 +5026,7 @@ async function serviceIoCall(payload){
           fitY: true,
         });
       }
-      if(heatingVisible){
+      if(heatingVisible && $("#eqChartHeating")?.getBoundingClientRect().width > 24){
         drawEquithermChart($("#eqChartHeating"), {
           dayCurve, nightCurve, minFlowC, maxFlowC,
           pointX, pointY,
