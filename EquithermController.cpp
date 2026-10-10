@@ -397,6 +397,8 @@ namespace {
     bool timeValid = false;
     String timeIso;
     const String mode = effectiveMode(scheduleUsed, in1Forced, timeValid, timeIso);
+    const bool wasActive = s_st.active;
+    const bool modeChanged = s_st.modeEff != mode;
     s_st.modeEff = mode;
     s_st.scheduleUsed = scheduleUsed;
     s_st.in1ForcingNight = in1Forced;
@@ -481,8 +483,9 @@ namespace {
       return;
     }
 
-    float clampMin = s_cfg.minFlowC;
-    float clampMax = s_cfg.maxFlowC;
+    // Boiler limits are independent of the mixing-circuit flow limits.
+    float clampMin = s_cfg.minChSetpointC;
+    float clampMax = s_cfg.maxChSetpointC;
     if (isfinite(ot.maxChSetpointC)) clampMax = fminf(clampMax, ot.maxChSetpointC);
     if (s_cfg.applyBoilerMaxCh && isfinite(s_cfg.boilerMaxChC)) clampMax = fminf(clampMax, s_cfg.boilerMaxChC);
     if (clampMin > clampMax) clampMin = clampMax;
@@ -490,6 +493,12 @@ namespace {
     s_st.boilerClampMaxC = clampMax;
 
     float boilerTarget = baseTarget;
+    // In comfort (DAY), request extra boiler supply temperature without
+    // raising the mixing-valve target. IN1 day/night polarity is unchanged.
+    if (mode == "day" && s_cfg.boilerAssistEnabled &&
+        isfinite(s_cfg.boilerAssistDeltaC) && s_cfg.boilerAssistDeltaC > 0.0f) {
+      boilerTarget += s_cfg.boilerAssistDeltaC;
+    }
     clampFloat(boilerTarget, clampMin, clampMax);
     s_st.boilerSetpointC = boilerTarget;
     s_st.active = true;
@@ -497,11 +506,14 @@ namespace {
     const uint32_t now = millis();
     const bool intervalOk = !s_st.lastSendMs || (uint32_t)(now - s_st.lastSendMs) >= s_cfg.minSendIntervalMs;
     const bool deltaOk = !isfinite(s_st.lastSentChC) || fabsf(boilerTarget - s_st.lastSentChC) >= s_cfg.minSendDeltaC;
-    if (!forceSend && !intervalOk) {
+    // Mode transitions (including scheduled COMFORT) and recovery after
+    // an inactive/blocked state must not wait for the normal send interval.
+    const bool prioritySend = forceSend || modeChanged || !wasActive;
+    if (!prioritySend && !intervalOk) {
       s_st.reason = "hold_interval";
       return;
     }
-    if (!forceSend && !deltaOk) {
+    if (!prioritySend && !deltaOk) {
       s_st.reason = "hold_delta";
       return;
     }

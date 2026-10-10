@@ -156,10 +156,40 @@ unsigned long OpenTherm::sendRequest(unsigned long request)
         return 0;
     }
 
+    // The normal OpenTherm timeout is based on the last RX edge. An unstable
+    // input can keep advancing that timestamp, so it is not a hard bound on
+    // this synchronous call. Never let a noisy/missing boiler block loop().
+    static constexpr uint32_t kAbsoluteTimeoutMs = 3000UL;
+    static constexpr uint32_t kBackgroundIntervalMs = 10UL;
+    const uint32_t startedMs = millis();
+    uint32_t lastBackgroundMs = startedMs - kBackgroundIntervalMs;
+
     while (!isReady())
     {
         process();
-        if (openThermBackgroundService) {
+        if (isReady()) break;
+
+        const uint32_t nowMs = millis();
+        if ((uint32_t)(nowMs - startedMs) >= kAbsoluteTimeoutMs)
+        {
+            noInterrupts();
+            status = OpenThermStatus::READY;
+            response = 0;
+            responseStatus = OpenThermResponseStatus::TIMEOUT;
+            interrupts();
+            setIdleState();
+            Serial.printf("[OT] HARD TIMEOUT ID=%u, %lu ms\n",
+                          (unsigned)((request >> 16) & 0xffUL),
+                          (unsigned long)(nowMs - startedMs));
+            break;
+        }
+
+        // Still allow WebSocket/valve service while waiting, but do not call
+        // it in a tight spin: the callback can run networking and I2C work.
+        if (openThermBackgroundService &&
+            (uint32_t)(nowMs - lastBackgroundMs) >= kBackgroundIntervalMs)
+        {
+            lastBackgroundMs = nowMs;
             openThermBackgroundService();
         }
         yield();
