@@ -1250,6 +1250,7 @@ namespace {
     out["valid"] = networkIsTimeValid();
     if (networkIsTimeValid()) out["iso"] = networkGetTimeIso(); else out["iso"] = nullptr;
     out["src"] = networkGetTimeSource();
+    out["rtc"] = networkIsRtcPresent();
   }
 
   static void fillEquithermSectionJson(JsonObject eq) {
@@ -1664,6 +1665,16 @@ namespace {
   static size_t bootImportConfigFromLittleFS() {
     if (!g_fsMounted) return 0;
 
+    // /config.json is a backup/export of NVS, not a startup authority.
+    // Once NVS has been provisioned, importing every boot can undo newer
+    // settings after an interrupted LittleFS snapshot write.
+    Preferences bootPrefs;
+    if (bootPrefs.begin("bootcfg", false)) {
+      const bool provisioned = bootPrefs.getBool("nvs_ready", false);
+      bootPrefs.end();
+      if (provisioned) return 0;
+    }
+
     size_t applied = 0;
     bool importedAny = false;
 
@@ -1696,8 +1707,14 @@ namespace {
 
     if (importedAny) {
       const bool snapshotOk = saveConfigSnapshot();
-      Serial.printf("[WEB] Boot import from LittleFS complete (%u applied, snapshot=%s)\n",
+      Serial.printf("[WEB] First boot import from LittleFS complete (%u applied, snapshot=%s)\n",
                     (unsigned)applied, snapshotOk ? "ok" : "failed");
+    }
+    // Do not repeatedly import old files on subsequent boots.
+    Preferences bootPrefs;
+    if (bootPrefs.begin("bootcfg", false)) {
+      bootPrefs.putBool("nvs_ready", true);
+      bootPrefs.end();
     }
     return applied;
   }
@@ -1764,6 +1781,28 @@ namespace {
     if (!snapshotOk) doc["warn"] = "snapshot_failed";
     sendJsonDoc(200, doc);
     recordAdminAction("cfg_import", true, snapshotOk ? "imported" : "imported_no_snapshot");
+  }
+
+  static void handleTimeManualPost() {
+    DynamicJsonDocument docIn(256);
+    if (deserializeJson(docIn, g_srv.arg("plain")) || !docIn.is<JsonObject>()) {
+      writeUploadJson(400, false, "invalid_json"); return;
+    }
+    const JsonVariantConst v = docIn["epoch"];
+    if (!v.is<uint32_t>() && !v.is<uint64_t>() && !v.is<int64_t>()) {
+      writeUploadJson(400, false, "epoch_seconds_required"); return;
+    }
+    const int64_t epoch = v.as<int64_t>();
+    if (epoch <= 1672531200LL || epoch >= 4102444800LL ||
+        !networkSetTimeEpoch((time_t)epoch)) {
+      writeUploadJson(400, false, "invalid_epoch_or_clock_error"); return;
+    }
+    DynamicJsonDocument out(256);
+    out["ok"] = true;
+    out["iso"] = networkGetTimeIso();
+    out["source"] = networkGetTimeSource();
+    out["rtc"] = networkIsRtcPresent();
+    sendJsonDoc(200, out);
   }
 
   static void handleInputsConfigPost() { handleSectionPost("inputs"); }
@@ -1901,15 +1940,14 @@ namespace {
     }
     if (t.containsKey("ntp") && t["ntp"].is<JsonArrayConst>()) {
       JsonArrayConst a = t["ntp"].as<JsonArrayConst>();
-      String s1 = ConfigStore::getTimeNtp1();
-      String s2 = ConfigStore::getTimeNtp2();
-      String s3 = ConfigStore::getTimeNtp3();
+      String s1;
+      String s2;
+      String s3;
       int idx = 0;
       for (JsonVariantConst v : a) {
         if (!v.is<const char*>()) continue;
         String sv = String((const char*)v);
         sv.trim();
-        if (!sv.length()) continue;
         if (idx == 0) s1 = sv;
         if (idx == 1) s2 = sv;
         if (idx == 2) s3 = sv;
@@ -2734,7 +2772,7 @@ void webPortalInit() {
     g_fsMounted = LittleFS.begin(true);
   }
 
-  // NVS remains the fallback store, but valid LittleFS JSON can override it at boot.
+  // NVS is authoritative after first provisioning; LittleFS JSON is a backup.
   ConfigRuntime::loadAllFromStore();
   const size_t bootImportedSections = bootImportConfigFromLittleFS();
   ConfigRuntime::applyAllRuntime();
@@ -2780,6 +2818,7 @@ void webPortalInit() {
   g_srv.on("/api/config/mqtt", HTTP_GET, handleMqttConfigGet);
   g_srv.on("/api/config/mqtt", HTTP_POST, handleMqttConfigPost);
   g_srv.on("/api/config/time", HTTP_GET, handleTimeConfigGet);
+  g_srv.on("/api/time/set", HTTP_POST, handleTimeManualPost);
   g_srv.on("/api/config/time", HTTP_POST, handleTimeConfigPost);
   g_srv.on("/api/mqtt/status", HTTP_GET, handleMqttStatus);
   g_srv.on("/api/events", HTTP_GET, [](){ sendJson(200, EventLog::toJson()); });
