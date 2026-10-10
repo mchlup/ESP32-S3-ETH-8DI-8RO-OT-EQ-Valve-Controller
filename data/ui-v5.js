@@ -109,39 +109,64 @@
   }
   function overview() {
     const section=byId("view-overview");if(!section)return;
-    const children=Array.from(section.children);
+    const originals=Array.from(section.children);
     const original=cls(section,":scope > .card");
     section.replaceChildren();
-    const top=make("div","v5-page-title-row");
-    put(top,heading("HLAVNÍ PŘEHLED / ŽIVÝ PROVOZ","Centrální přehled","Přesná data z ESP32 bez čekání na obnovení stránky."));
-    const actions=make("div","v5-primary-actions",
-      '<button class="btn" type="button" data-open-view="heating">♨ Nastavení topení</button>'+
-      '<button class="btn" type="button" data-open-view="mixing">◇ Ovládání ventilu</button>');
-    top.appendChild(actions);section.appendChild(top);
-    const board=card("Energetická mapa","Živý přehled propojení jednotlivých okruhů.","v5-energy-board");
-    cardBody(board).innerHTML=flowMarkup();
-    section.appendChild(board);
-    const metrics=make("section","v5-metrics-wrap",metricsMarkup("v5-ov"));
+    const top=make("div","v5-page-title-row v5-overview-head");
+    put(top,heading("PŘEHLED / AKTUÁLNÍ STAV","Přehled vytápění",
+      "Aktuální údaje z kotle, směšovacího ventilu a cirkulace."));
+    top.appendChild(make("div","v5-primary-actions",
+      '<button class="btn" type="button" data-open-view="heating">Nastavení topení ↗</button>'+
+      '<button class="btn" type="button" data-open-view="mixing">Směšovací ventil ↗</button>'));
+    section.appendChild(top);
+
+    const status=make("div","v5-overview-status",
+      '<div><span>Režim topení</span><strong id="v5-overview-mode">—</strong></div>'+
+      '<div><span>Vstup IN1</span><strong id="v5-overview-in1">—</strong></div>'+
+      '<div><span>OpenTherm</span><strong id="v5-overview-ot">—</strong></div>'+
+      '<div><span>Cirkulace</span><strong id="v5-overview-circ">—</strong></div>');
+    section.appendChild(status);
+
+    const metrics=make("section","v5-metrics-wrap v5-overview-metrics",metricsMarkup("v5-ov"));
     section.appendChild(metrics);
-    const row=make("div","v5-main-split");
-    const trend=card("","", "v5-trend-card");trend.querySelector(".v5-card-head").remove();
-    cardBody(trend).innerHTML=trendMarkup();
-    const routine=card("Režimy a požadavky","Skutečné stavy přímo z regulátoru","v5-operation-card");
-    cardBody(routine).innerHTML='<div class="v5-facts">'+
-      '<div><span>Režim vytápění</span><strong id="v5-live-mode">—</strong></div>'+
-      '<div><span>Vstup IN1</span><strong id="v5-live-in1">—</strong></div>'+
-      '<div><span>Ohřev TUV</span><strong id="v5-live-dhw">—</strong></div>'+
-      '<div><span>Komunikace OT</span><strong id="v5-live-ot">—</strong></div>'+
-      '<div><span>Směšovač</span><strong id="v5-live-mix">—</strong></div>'+
+
+    const row=make("div","v5-overview-primary");
+    const mixing=card("Směšovací ventil","Teplota a skutečný stav portů A, B a AB","v5-overview-mixer");
+    cardBody(mixing).innerHTML=
+      '<div class="v5-mixer-visual" aria-label="A přívod + B vratná větev = smíchaná voda AB">'+
+       '<div class="v5-mixer-inlets">'+
+        '<div class="v5-port hot"><span>A · teplý přívod</span><strong id="v5-ov-mix-a">—</strong></div>'+
+        '<div class="v5-port cold"><span>B · vratná větev</span><strong id="v5-ov-mix-b">—</strong></div>'+
+       '</div>'+
+       '<div class="v5-mixer-join"><span>↘</span><strong>◇</strong><span>↙</span></div>'+
+       '<div class="v5-mixer-out"><div><span>AB · výstup do topení</span><strong id="v5-ov-mix-ab">—</strong></div><div><span>Cíl regulace</span><strong id="v5-ov-mix-goal">—</strong></div></div>'+
       '</div>'+
-      '<div class="v5-actions-mini"><button class="btn" type="button" data-open-view="dhw">Přejít na TUV ↗</button><button class="btn" type="button" data-open-view="opentherm">OpenTherm ↗</button></div>';
-    put(row,trend,routine);section.appendChild(row);
-    if(original)section.appendChild(reveal("Detailní telemetrie a původní diagnostické grafy",
-      "Graf ekvitermní křivky, stav plánů, plné zobrazení nádrže a informace zařízení",original));
-    for(const other of children) {
-      if(other===original || other.classList.contains("page-hero"))continue;
-      section.appendChild(other);
-    }
+      '<div class="v5-position-info"><span>Odhad polohy ventilu</span><strong id="v5-ov-mix-pos">—</strong></div>'+
+      '<div class="v5-position-bar" role="meter" aria-label="Odhad otevření ventilu" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="v5-ov-mix-meter"><i id="v5-ov-mix-fill"></i></div>'+
+      '<div class="v5-position-captions"><span>B · 0 %</span><span>A · 100 %</span></div>'+
+      '<div class="v5-mixer-foot"><span id="v5-ov-mix-dir">Směr: —</span><button class="btn" type="button" data-open-view="mixing">Otevřít regulaci ↗</button></div>';
+
+    const circulation=card("Cirkulační čerpadlo TUV","Stav čerpadla podle relé a požadavků regulace","v5-overview-circ");
+    cardBody(circulation).innerHTML=
+      '<div class="v5-circ-current" data-running="unknown" id="v5-circ-widget">'+
+       '<div class="v5-circ-pump-icon" aria-hidden="true"><span>⟳</span></div>'+
+       '<div class="v5-circ-copy"><span>AKTUÁLNÍ STAV</span><strong id="v5-circ-state">Čekám na zařízení</strong><small id="v5-circ-relay">Relé cirkulace: —</small></div>'+
+      '</div>'+
+      '<div class="v5-circ-facts">'+
+        '<div><span>Požadavek cirkulace</span><strong id="v5-circ-request">—</strong></div>'+
+        '<div><span>Zdroj požadavku</span><strong id="v5-circ-source">—</strong></div>'+
+        '<div><span>Pulzní fáze</span><strong id="v5-circ-pulse">—</strong></div>'+
+        '<div><span>Teplota TUV</span><strong id="v5-circ-temp">—</strong></div>'+
+      '</div>'+
+      '<div class="v5-circ-buttons"><button class="btn" type="button" data-open-view="dhw" data-v5-open-tab="circCfg">Nastavení cirkulace ↗</button>'+
+       '<button class="btn" type="button" data-open-view="dhw" data-v5-open-tab="circPlan">Plán cirkulace ↗</button></div>';
+    put(row,mixing,circulation);section.appendChild(row);
+    const trend=card("Trend teploty kotle","Naměřená teplota vůči požadavku OpenTherm.","v5-overview-trend");
+    cardBody(trend).innerHTML=trendMarkup();
+    section.appendChild(reveal("Graf vývoje topné vody","Naměřená teplota a požadavek kotli, historie posledních 120 vzorků",trend));
+    if(original)section.appendChild(reveal("Rozšířený technický přehled",
+      "Detailní grafy, hodnoty čidel, AKU, TUV a všechny původní provozní údaje",original));
+    for(const n of originals)if(n!==original&&!n.classList.contains("page-hero"))section.appendChild(n);
   }
 
   function heating() {
@@ -158,18 +183,40 @@
     const relays=byId("hNightRelay")?.closest(".heat-group");
     const chart=cls(main,".chartbox");
     section.replaceChildren();
-    put(section,heading("VYTÁPĚNÍ / EKVITERM","Topení","Živá regulace, křivky, režimy, požadavky kotli a plán."));
-    if(header){header.classList.add("v5-action-head");section.appendChild(header);}
+    put(section,heading("VYTÁPĚNÍ / EKVITERM","Topení",
+      "Provozní režim, křivky s okamžitým náhledem, OpenTherm a časový program."));
     const p=tabs("heating",[
-      ["live","◉ Provoz"],["curve","⌁ Ekviterm"],["boiler","♨ Kotel a režimy"],["plan","◷ Týdenní plán"],["extra","⋯ Další"]
+      ["live","◉ Provoz"],["curve","⌁ Ekvitermní křivky"],
+      ["boiler","♨ Kotel a relé"],["plan","◷ Týdenní plán"],["extra","⋯ Další"]
     ],section);
+
     const live=make("div","v5-live-stack");
-    live.innerHTML='<div class="v5-feature-hero v5-heat-feature"><div><span>AKTUÁLNÍ POŽADAVEK KOTLI</span><strong id="v5-h-target">—</strong><small id="v5-h-mode">Režim: —</small></div><div class="v5-feature-side"><span>Skutečná voda</span><strong id="v5-h-actual">—</strong><span>Výstup AB</span><strong id="v5-h-ab">—</strong></div></div>';
-    const mini=make("div","v5-inline-flow");mini.innerHTML='<span>Kotel <strong id="v5-heat-boiler">—</strong></span><b>→</b><span>Směšovač <strong id="v5-heat-valve">—</strong></span><b>→</b><span>Okruh <strong id="v5-heat-room">—</strong></span>';
-    put(live,mini,chart);put(p.live,live);
-    const curveLayout=make("div","v5-two-panels");put(curveLayout,curves,mode);put(p.curve,curveLayout);
-    if(boiler || relays){const row=make("div","v5-two-panels");put(row,boiler,relays);put(p.boiler,row);}
-    put(p.boiler,note("IN1 zůstává beze změny","Aktivní IN1 vyvolává útlum. V komfortním režimu lze navýšit požadavek kotli přes OpenTherm ID 1, aniž by se změnil cíl směšovacího ventilu."));
+    live.innerHTML='<div class="v5-feature-hero v5-heat-feature"><div><span>POŽADAVEK KOTLI PŘES OT</span><strong id="v5-h-target">—</strong><small id="v5-h-mode">Režim: —</small></div>'+
+      '<div class="v5-feature-side"><span>Skutečná voda</span><strong id="v5-h-actual">—</strong><span>Výstup AB</span><strong id="v5-h-ab">—</strong></div></div>';
+    const mini=make("div","v5-inline-flow");
+    mini.innerHTML='<span>Kotel <strong id="v5-heat-boiler">—</strong></span><b>→</b>'+
+      '<span>Směšovač <strong id="v5-heat-valve">—</strong></span><b>→</b>'+
+      '<span>Okruh <strong id="v5-heat-room">—</strong></span>';
+    put(live,mini);put(p.live,live);
+    // Place the former "Konfigurace topení" action bar and mode switches
+    // on the Provoz workspace, not above every tab.
+    if(header){header.classList.add("v5-action-head");put(p.live,header);}
+    if(mode)put(p.live,mode);
+
+    const curveLayout=make("div","v5-heating-curve-workspace");
+    if(curves)curveLayout.appendChild(curves);
+    if(chart){
+      const right=make("div","v5-curve-live-preview");
+      put(right,make("header","v5-curve-preview-head",
+        '<strong>Náhled ekvitermních křivek</strong><span id="v5-curve-preview-state">Graf z aktuálního nastavení</span>'),chart);
+      curveLayout.appendChild(right);
+    }
+    put(p.curve,curveLayout);
+    put(p.curve,note("Graf reaguje ihned",
+      "Změna sklonu, posunu nebo minimální/maximální teploty se okamžitě projeví v křivkách. Do kotle se nastavení odešle až po uložení."));
+    if(boiler||relays){const row=make("div","v5-two-panels");put(row,boiler,relays);put(p.boiler,row);}
+    put(p.boiler,note("Vstup IN1",
+      "Aktivní IN1 znamená útlum. V komfortním režimu se používá nastavený offset požadavku kotli (OpenTherm ID 1)."));
     if(planner)put(p.plan,planner);
     if(body)put(p.extra,body);
     for(const n of originals)if(n!==main&&n!==planner)section.appendChild(n);
