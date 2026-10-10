@@ -226,6 +226,10 @@ namespace {
                s_ntp1.c_str(),
                s_ntp2.length() ? s_ntp2.c_str() : nullptr,
                s_ntp3.length() ? s_ntp3.c_str() : nullptr);
+    // Arduino configTime() may install a numeric/UTC timezone. Restore our
+    // explicit POSIX timezone for local schedules and CET/CEST switching.
+    setenv("TZ", s_tz.c_str(), 1);
+    tzset();
 
     s_timeConfigured = true;
     if (!s_timeValid) s_timeSource = "waiting_ntp";
