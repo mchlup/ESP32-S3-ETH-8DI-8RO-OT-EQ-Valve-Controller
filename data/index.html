@@ -2,7 +2,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#f4f7f9"><meta name="color-scheme" content="light dark">
 <meta name="description" content="THERMA - Řízení vytápění, TUV a směšovacího ventilu pro ESP32-S3.">
-<title>THERMA · Řízení vytápění</title><link rel="stylesheet" href="/app.css?v=4.0.0">
+<title>THERMA · Řízení vytápění</title><link rel="stylesheet" href="/app.css?v=5.0.0"><link rel="stylesheet" href="/ui-v5.css?v=5.0.0">
 </head><body class="ui-v4">
 <div class="app" id="app">
  <aside class="sidebar" id="uiSidebar" aria-label="Hlavní navigace">
@@ -1610,15 +1610,6 @@
                   <button class="btn primary" type="button" id="timeSave">Uložit</button>
                   <span class="muted mono" id="timeStatusText">--</span>
                 </div>
-                <div class="field" style="margin-top:12px">
-                  <label for="timeManualInput">Nastavit čas zařízení z tohoto počítače / mobilu (bez internetu)</label>
-                  <div class="row" style="align-items:center;flex-wrap:wrap">
-                    <input id="timeManualInput" type="datetime-local" step="1" style="min-width:220px;flex:1" />
-                    <button class="btn" id="timeManualNow" type="button">Aktuální čas zařízení prohlížeče</button>
-                    <button class="btn primary" id="timeManualSet" type="button">Nastavit čas ESP32 a RTC</button>
-                  </div>
-                  <div class="muted" style="margin-top:5px">NTP server může mít také lokální IP adresu (např. router/NAS). Ruční čas se uloží do RTC a zůstává platný bez přístupu k internetu.</div>
-                </div>
               </div>
             </details>
 
@@ -1822,5 +1813,6 @@
 <div class="toast" id="toast" aria-live="polite" aria-atomic="false"></div>
 <aside id="pendingSaveBar" class="pending-save-bar" hidden role="region" aria-label="Neuložené změny konfigurace"><div class="pending-save-info"><span class="pending-save-icon" aria-hidden="true">✎</span><div><strong>Neuložené změny</strong><span id="pendingSaveSummary" aria-live="polite">Upravili jste konfiguraci.</span></div></div><div id="pendingSaveActions" class="pending-save-actions"></div></aside>
 <div class="quick-search-overlay" id="quickSearchOverlay" hidden role="dialog" aria-modal="true" aria-labelledby="quickSearchLabel"><div class="quick-search-dialog"><div class="quick-search-input-wrap"><span>⌕</span><label id="quickSearchLabel" class="sr-only" for="quickSearchInput">Rychlé hledání stránky</label><input id="quickSearchInput" type="search" autocomplete="off" placeholder="Kam chcete přejít?" aria-controls="quickSearchResults"><kbd>ESC</kbd></div><div class="quick-search-results" id="quickSearchResults"></div><div class="quick-search-foot">Enter: otevřít první výsledek · /: hledat · Esc: zavřít</div></div></div>
-<script defer src="/app.js?v=4.0.0"></script>
+<script defer src="/ui-v5.js?v=5.0.0"></script>
+<script defer src="/app.js?v=5.0.0"></script>
 </body></html>
