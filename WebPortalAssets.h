@@ -46,6 +46,64 @@ static const char WEB_INDEX_HTML[] PROGMEM = R"HTML(
     .acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}.acts button{margin:0}.mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
     textarea{min-height:320px;resize:vertical}
     @media (max-width: 1080px){.grid{grid-template-columns:1fr}.fmShell{grid-template-columns:1fr}.treeList,.fileList{max-height:none}}
+
+    /* FullHD workspace: the file table gets the whole available width. */
+    .wrap{max-width:1920px;padding:14px clamp(12px,1.4vw,26px)}
+    .hero{align-items:center;gap:12px}.hero h1{font-size:21px;margin:0 0 3px}
+    .hero .muted{font-size:12px}.hero>.card{padding:9px 12px}
+    .grid{grid-template-columns:minmax(0,1fr);gap:10px;margin-top:11px}
+    .grid>section.card{min-width:0;padding:12px}
+    .fmHead{align-items:center;gap:9px;margin-bottom:8px}
+    .fmHead h2{margin:0 0 3px;font-size:16px}
+    .fmHead .muted{font-size:11px}
+    .fmStats{gap:5px}.chip{padding:4px 8px}
+    .fmShell{grid-template-columns:minmax(210px,230px) minmax(0,1fr);gap:10px;min-height:0}
+    .fmPane,.fmPreview{min-width:0}
+    .paneBody{padding:7px}
+    .paneHead{padding:8px 10px}
+    .treeList{max-height:min(56vh,640px)}
+    .fileHeader,.fileRow{grid-template-columns:minmax(330px,1fr) 70px 82px minmax(245px,auto);gap:9px}
+    .fileRow{padding:6px 9px;min-height:39px;cursor:default}
+    .fileHeader{padding:8px 9px}
+    .fileList{max-height:min(54vh,590px);padding:4px}
+    .fileRow .name,.treeItem .name{
+      display:block;min-width:0;overflow:visible;text-overflow:clip;
+      white-space:normal;overflow-wrap:anywhere;line-height:1.3
+    }
+    .fileRow .name>.meta{font-size:10px;opacity:.75;margin-top:2px;overflow-wrap:anywhere}
+    .fileRow .acts{flex-wrap:nowrap;gap:4px;justify-content:flex-end}
+    .fileRow .acts button{padding:5px 7px;font-size:11px;white-space:nowrap;min-height:28px}
+    .treeItem{grid-template-columns:18px minmax(0,1fr);gap:6px;padding:6px 7px}
+    .treeItem .meta{display:none}
+    .sideStack{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start;gap:10px}
+    .sideStack>.card{min-width:0;padding:11px 12px;box-shadow:none}
+    .sideStack>.card h2{font-size:14px;margin:0 0 7px}
+    .sideStack>.card .muted{font-size:11px;line-height:1.3}
+    .sideStack>.card label{margin:7px 0 4px;font-size:12px}
+    .sideStack>.card button{margin-top:7px;padding:7px 11px}
+    .sideStack>.card .drop{margin-top:6px;padding:7px 10px;font-size:11px}
+    .sideStack>.card .status{margin-top:6px;padding:7px 9px;font-size:11px;min-height:31px}
+    #viewerContent{min-height:128px;height:176px;resize:vertical}
+    #fsPath{min-width:0!important;width:100%}
+    .status{word-break:break-word}
+    @media(max-width:960px){
+      .sideStack{grid-template-columns:1fr 1fr}
+      .fmShell{grid-template-columns:190px minmax(0,1fr)}
+      .fileHeader,.fileRow{grid-template-columns:minmax(200px,1fr) 70px 75px minmax(220px,auto)}
+    }
+    @media(max-width:720px){
+      .wrap{padding:9px}
+      .grid{grid-template-columns:1fr}
+      .fmShell{grid-template-columns:1fr}
+      .treeList{max-height:145px}
+      .fileList{max-height:370px}
+      .fileHeader,.fileRow{grid-template-columns:minmax(0,1fr) minmax(110px,auto)}
+      .fileHeader>div:nth-child(2),.fileHeader>div:nth-child(3),
+      .fileRow>.meta,.fileRow>.mono{display:none}
+      .fileRow .acts{justify-content:flex-end;flex-wrap:wrap}
+      .fileRow .acts button{font-size:10px}
+      .sideStack{grid-template-columns:1fr}
+    }
   </style>
 </head>
 <body>
