@@ -4185,7 +4185,7 @@ async function timeSave(){
       String(document.getElementById("timeNtp1")?.value || "").trim(),
       String(document.getElementById("timeNtp2")?.value || "").trim(),
       String(document.getElementById("timeNtp3")?.value || "").trim(),
-    ].filter(Boolean)
+    ]
   };
   await api.postConfigSection("time", payload);
   clearPendingSaveDirty("time");
@@ -6305,6 +6305,28 @@ updatePlannerStateBadges();
       }
       document.getElementById("timeRefresh")?.addEventListener("click", () => withButtonBusy(document.getElementById("timeRefresh"), "Načítám…", () => timeLoad({ silent:false })));
       document.getElementById("timeSave")?.addEventListener("click", () => withButtonBusy(document.getElementById("timeSave"), "Ukládám…", () => timeSave()));
+      function fillManualTimeFromBrowser(){
+        const input=document.getElementById("timeManualInput");
+        if(!input)return;
+        const d=new Date(),offset=d.getTimezoneOffset()*60000;
+        input.value=new Date(d.getTime()-offset).toISOString().slice(0,19);
+      }
+      document.getElementById("timeManualNow")?.addEventListener("click",fillManualTimeFromBrowser);
+      document.getElementById("timeManualSet")?.addEventListener("click",async()=>withButtonBusy(
+        document.getElementById("timeManualSet"),"Nastavuji…",async()=>{
+          const raw=document.getElementById("timeManualInput")?.value;
+          if(!raw){toast("Čas","Vyber datum a čas.","⚠");return;}
+          const date=new Date(raw),epoch=Math.round(date.getTime()/1000);
+          if(!Number.isFinite(epoch)||epoch<1672531201||epoch>4102444800){
+            toast("Čas","Neplatné datum.","⚠");return;
+          }
+          try{
+            await api.postJson("/api/time/set",{epoch},5000);
+            await timeLoad({silent:true});
+            toast("Čas","Čas zařízení a RTC byl nastaven.","✅");
+          }catch(e){toast("Čas",e.message||String(e),"⚠");}
+        }
+      ));
       document.getElementById("eventsRefresh")?.addEventListener("click", () => withButtonBusy(document.getElementById("eventsRefresh"), "Načítám…", () => eventsLoad({ silent:false })));
       document.getElementById("eventsClear")?.addEventListener("click", async () => withButtonBusy(document.getElementById("eventsClear"), "Mažu…", async () => { await api.postJson("/api/events/clear", {}); await eventsLoad({ silent:true }); toast("Event log", "Vymazáno.", "🧹"); }));
       document.getElementById("historyRefresh")?.addEventListener("click", () => withButtonBusy(document.getElementById("historyRefresh"), "Načítám…", () => historyLoad({ silent:false })));
