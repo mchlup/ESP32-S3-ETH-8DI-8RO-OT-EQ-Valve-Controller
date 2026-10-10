@@ -249,26 +249,46 @@
 
   function dhw() {
     const section=byId("view-dhw");if(!section)return;
-    const original=Array.from(section.children);
-    const main=original.find(x=>x.classList?.contains("card"));
-    const planner=original.filter(x=>x.classList?.contains("card"))[1];
+    const old=Array.from(section.children),main=old.find(e=>e.classList?.contains("card")),planner=old.filter(e=>e.classList?.contains("card"))[1];
     if(!main)return;
-    const head=cls(main,":scope > .card-head");
-    const body=cls(main,":scope > .card-body");
-    const first=byId("dhw2Target")?.closest(".row");
+    const head=cls(main,":scope > .card-head"),body=cls(main,":scope > .card-body"),first=byId("dhw2Target")?.closest(".row");
+    const anti=byId("dhwAntiLegEnabled")?.closest("details");
+    const circFields=["dhwCircUseInput","dhwCircUseSchedule","dhwCircRelay"].map(id=>byId(id)).filter(Boolean);
+    const circPlanner=byId("planner-dhwCirc")?.closest("details"),heatPlanner=byId("planner-dhwHeat")?.closest("details");
+    const pulseFields=["circPulseEnable","circPulseOn","circPulseOff"].map(id=>byId(id)).filter(Boolean);
+    const plannerSave=cls(planner,'[data-pl-save="dhwHeat"]');
+    const importExport=["plExport2","plImport2"].map(id=>byId(id)).filter(Boolean);
     section.replaceChildren();
-    put(section,heading("TEPLÁ UŽITKOVÁ VODA / TUV","Ohřev a cirkulace","Stav zásobníku, okamžité příkazy, teploty a týdenní plán."));
-    if(head){head.classList.add("v5-action-head");section.appendChild(head);}
+    put(section,heading("TUV / CIRKULACE","Ohřev a cirkulace","Samostatná nastavení ohřevu, čerpadla, hygieny a časových plánů."));
     const p=tabs("dhw",[
-      ["live","◉ Provoz"],["cfg","⚙ Nastavení"],["plan","◷ Plánovače"]
+      ["live","◉ Provoz"],["cfg","⚙ Ohřev TUV"],["plan","◷ Plánovač ohřevu"],
+      ["circCfg","⟳ Nastavení cirkulace"],["circPlan","◷ Plánovač cirkulace"],["anti","✦ Anti-legionella"]
     ],section);
     const hero=make("div","v5-dhw-dashboard",
       '<div class="v5-dhw-vessel"><span class="v5-dhw-vessel-cap"></span><span class="v5-dhw-water" id="v5-dhw-water"></span><span class="v5-dhw-vessel-copy"><small>ZÁSOBNÍK TUV</small><strong id="v5-dhw-temp">—</strong></span></div>'+
-      '<div class="v5-dhw-stats"><div><span>Cílová teplota</span><strong id="v5-dhw-goal">—</strong></div><div><span>Probíhá ohřev</span><strong id="v5-dhw-active">—</strong></div><div><span>Cirkulační čerpadlo</span><strong id="v5-dhw-pump">—</strong></div><p>Průběžné hodnoty z regulátoru. Ruční ovládání je propojené s existujícími příkazy backendu.</p></div>');
+      '<div class="v5-dhw-stats"><div><span>Cílová teplota</span><strong id="v5-dhw-goal">—</strong></div><div><span>Probíhá ohřev</span><strong id="v5-dhw-active">—</strong></div><div><span>Cirkulační čerpadlo</span><strong id="v5-dhw-pump">—</strong></div></div>');
     put(p.live,hero,first);
+    if(head){head.classList.add("v5-action-head");put(p.cfg,head);}
     if(body)put(p.cfg,body);
-    if(planner)put(p.plan,planner);
-    for(const n of original)if(n!==main&&n!==planner)put(p.cfg,n);
+    if(heatPlanner)put(p.plan,heatPlanner);
+    if(plannerSave)put(p.plan,plannerSave);
+    if(circPlanner){circPlanner.open=true;put(p.circPlan,circPlanner);}
+    for(const node of importExport)put(p.circPlan,node);
+    const circCfg=card("Nastavení cirkulačního čerpadla","Vstup IN3, časový program a přiřazení výstupního relé.");
+    const cb=cardBody(circCfg);cb.classList.add("v5-circ-settings");
+    for(const el of circFields)put(cb,el.closest(".field")||el.closest("label")||el);
+    const pulse=card("Pulzní režim","Doba zapnutí a přestávky během aktivního požadavku.");
+    const pb=cardBody(pulse);pb.classList.add("v5-circ-settings");
+    for(const el of pulseFields)put(pb,el.closest(".field")||el.closest("label")||el);
+    put(p.circCfg,circCfg,pulse);
+    const saveCfg=make("button","btn primary","Uložit nastavení cirkulace");
+    saveCfg.type="button";saveCfg.addEventListener("click",()=>byId("dhwSaveCfg")?.click());put(p.circCfg,saveCfg);
+    if(anti){
+      anti.open=true;put(p.anti,anti);
+      const saveAnti=make("button","btn primary","Uložit anti-legionella");
+      saveAnti.type="button";saveAnti.addEventListener("click",()=>byId("dhwSaveCfg")?.click());put(p.anti,saveAnti);
+    }
+    for(const n of old)if(n!==main&&n!==planner)put(p.cfg,n);
   }
 
   function accu() {
