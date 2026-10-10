@@ -8,6 +8,7 @@
 #include <WebSocketsServer.h>
 #include <ArduinoJson.h>
 #include <LittleFS.h>
+#include <Preferences.h>
 #include <Update.h>
 #include <esp_ota_ops.h>
 #include <esp_partition.h>
@@ -1250,6 +1251,7 @@ namespace {
     out["valid"] = networkIsTimeValid();
     if (networkIsTimeValid()) out["iso"] = networkGetTimeIso(); else out["iso"] = nullptr;
     out["src"] = networkGetTimeSource();
+    out["rtc"] = networkIsRtcPresent();
   }
 
   static void fillEquithermSectionJson(JsonObject eq) {
@@ -1664,6 +1666,30 @@ namespace {
   static size_t bootImportConfigFromLittleFS() {
     if (!g_fsMounted) return 0;
 
+    // /config.json is a backup/export of NVS, not a startup authority.
+    // Once NVS has been provisioned, importing every boot can undo newer
+    // settings after an interrupted LittleFS snapshot write.
+    Preferences bootPrefs;
+    if (bootPrefs.begin("bootcfg", false)) {
+      const bool provisioned = bootPrefs.getBool("nvs_ready", false);
+      bootPrefs.end();
+      if (provisioned) return 0;
+    }
+    // Existing deployed units may already have NVS settings without the
+    // new provisioning marker. Never overwrite those with a stale export.
+    Preferences cfgPrefs;
+    if (cfgPrefs.begin("cfg", true)) {
+      const bool populated = cfgPrefs.isKey("ot_en") || cfgPrefs.isKey("eq_en") ||
+                             cfgPrefs.isKey("dhw_en") || cfgPrefs.isKey("t_tz");
+      cfgPrefs.end();
+      if (populated) {
+        Preferences p;
+        if (p.begin("bootcfg", false)) { p.putBool("nvs_ready", true); p.end(); }
+        Serial.println("[WEB] Existing NVS config preserved; skipping LittleFS boot import");
+        return 0;
+      }
+    }
+
     size_t applied = 0;
     bool importedAny = false;
 
@@ -1696,8 +1722,15 @@ namespace {
 
     if (importedAny) {
       const bool snapshotOk = saveConfigSnapshot();
-      Serial.printf("[WEB] Boot import from LittleFS complete (%u applied, snapshot=%s)\n",
+      Serial.printf("[WEB] First boot import from LittleFS complete (%u applied, snapshot=%s)\n",
                     (unsigned)applied, snapshotOk ? "ok" : "failed");
+    }
+    // Reuse the Preferences instance declared at the beginning of this function.
+    // It has already been closed with end(), so begin() can open it again.
+    // Do not repeatedly import old files on subsequent boots.
+    if (bootPrefs.begin("bootcfg", false)) {
+      bootPrefs.putBool("nvs_ready", true);
+      bootPrefs.end();
     }
     return applied;
   }
@@ -1710,7 +1743,16 @@ namespace {
     if (deserializeJson(docIn, g_srv.arg("plain"))) { writeUploadJson(400, false, "bad_json"); return; }
     JsonObject root = docIn.as<JsonObject>();
     if (root.isNull()) { writeUploadJson(400, false, "bad_body"); return; }
-    applySectionByName(String(def->name), root);
+    if (String(def->name) == "mixing") {
+      String mixError;
+      if (!applyMixingSection(root, &mixError)) {
+        writeUploadJson(400, false, mixError.length() ? mixError : "invalid_mixing_configuration");
+        recordAdminAction(def->rateKey, false, "rejected_mixing");
+        return;
+      }
+    } else {
+      applySectionByName(String(def->name), root);
+    }
     const bool snapshotOk = saveConfigSnapshot();
     DynamicJsonDocument doc(192);
     doc["ok"] = true;
@@ -1732,7 +1774,7 @@ namespace {
 
   static void handleConfigApply() {
     if (rejectActionRateLimit("cfg_apply", 1000UL, 8, 60000UL, "config_apply_guard")) return;
-    DynamicJsonDocument docIn(16384);
+    DynamicJsonDocument docIn(49152);
     if (deserializeJson(docIn, g_srv.arg("plain"))) { writeUploadJson(400, false, "bad_json"); return; }
     JsonObject root = docIn.as<JsonObject>();
     if (root.isNull()) { writeUploadJson(400, false, "bad_body"); return; }
@@ -1750,7 +1792,7 @@ namespace {
 
   static void handleConfigImport() {
     if (rejectActionRateLimit("cfg_import", 1500UL, 4, 60000UL, "config_import_guard")) return;
-    DynamicJsonDocument docIn(16384);
+    DynamicJsonDocument docIn(49152);
     if (deserializeJson(docIn, g_srv.arg("plain"))) { writeUploadJson(400, false, "bad_json"); return; }
     JsonObject root = docIn.as<JsonObject>();
     if (root.isNull()) { writeUploadJson(400, false, "bad_body"); return; }
@@ -1764,6 +1806,28 @@ namespace {
     if (!snapshotOk) doc["warn"] = "snapshot_failed";
     sendJsonDoc(200, doc);
     recordAdminAction("cfg_import", true, snapshotOk ? "imported" : "imported_no_snapshot");
+  }
+
+  static void handleTimeManualPost() {
+    DynamicJsonDocument docIn(256);
+    if (deserializeJson(docIn, g_srv.arg("plain")) || !docIn.is<JsonObject>()) {
+      writeUploadJson(400, false, "invalid_json"); return;
+    }
+    const JsonVariantConst v = docIn["epoch"];
+    if (!v.is<uint32_t>() && !v.is<uint64_t>() && !v.is<int64_t>()) {
+      writeUploadJson(400, false, "epoch_seconds_required"); return;
+    }
+    const int64_t epoch = v.as<int64_t>();
+    if (epoch <= 1672531200LL || epoch >= 4102444800LL ||
+        !networkSetTimeEpoch((time_t)epoch)) {
+      writeUploadJson(400, false, "invalid_epoch_or_clock_error"); return;
+    }
+    DynamicJsonDocument out(256);
+    out["ok"] = true;
+    out["iso"] = networkGetTimeIso();
+    out["source"] = networkGetTimeSource();
+    out["rtc"] = networkIsRtcPresent();
+    sendJsonDoc(200, out);
   }
 
   static void handleInputsConfigPost() { handleSectionPost("inputs"); }
@@ -1808,17 +1872,26 @@ namespace {
       LittleFS.remove(tempPath);
       return false;
     }
+    File verify = LittleFS.open(tempPath, "r");
+    const bool fullWrite = verify && verify.size() == written;
+    if (verify) verify.close();
+    if (!fullWrite) { LittleFS.remove(tempPath); return false; }
 
-    if (LittleFS.exists(finalPath)) {
-      if (!LittleFS.remove(finalPath)) {
-        LittleFS.remove(tempPath);
-        return false;
-      }
-    }
-    if (!LittleFS.rename(tempPath, finalPath)) {
+    // Keep the previous copy until the new one is completely written.
+    // On an interrupted update the .bak file is still a recoverable snapshot.
+    const String backupPath = finalPath + ".bak";
+    if (LittleFS.exists(backupPath)) LittleFS.remove(backupPath);
+    const bool existed = LittleFS.exists(finalPath);
+    if (existed && !LittleFS.rename(finalPath, backupPath)) {
       LittleFS.remove(tempPath);
       return false;
     }
+    if (!LittleFS.rename(tempPath, finalPath)) {
+      if (existed) LittleFS.rename(backupPath, finalPath);
+      LittleFS.remove(tempPath);
+      return false;
+    }
+    if (existed) LittleFS.remove(backupPath);
     return true;
   }
 
@@ -1901,15 +1974,14 @@ namespace {
     }
     if (t.containsKey("ntp") && t["ntp"].is<JsonArrayConst>()) {
       JsonArrayConst a = t["ntp"].as<JsonArrayConst>();
-      String s1 = ConfigStore::getTimeNtp1();
-      String s2 = ConfigStore::getTimeNtp2();
-      String s3 = ConfigStore::getTimeNtp3();
+      String s1;
+      String s2;
+      String s3;
       int idx = 0;
       for (JsonVariantConst v : a) {
         if (!v.is<const char*>()) continue;
         String sv = String((const char*)v);
         sv.trim();
-        if (!sv.length()) continue;
         if (idx == 0) s1 = sv;
         if (idx == 1) s2 = sv;
         if (idx == 2) s3 = sv;
@@ -2734,7 +2806,7 @@ void webPortalInit() {
     g_fsMounted = LittleFS.begin(true);
   }
 
-  // NVS remains the fallback store, but valid LittleFS JSON can override it at boot.
+  // NVS is authoritative after first provisioning; LittleFS JSON is a backup.
   ConfigRuntime::loadAllFromStore();
   const size_t bootImportedSections = bootImportConfigFromLittleFS();
   ConfigRuntime::applyAllRuntime();
@@ -2780,6 +2852,7 @@ void webPortalInit() {
   g_srv.on("/api/config/mqtt", HTTP_GET, handleMqttConfigGet);
   g_srv.on("/api/config/mqtt", HTTP_POST, handleMqttConfigPost);
   g_srv.on("/api/config/time", HTTP_GET, handleTimeConfigGet);
+  g_srv.on("/api/time/set", HTTP_POST, handleTimeManualPost);
   g_srv.on("/api/config/time", HTTP_POST, handleTimeConfigPost);
   g_srv.on("/api/mqtt/status", HTTP_GET, handleMqttStatus);
   g_srv.on("/api/events", HTTP_GET, [](){ sendJson(200, EventLog::toJson()); });

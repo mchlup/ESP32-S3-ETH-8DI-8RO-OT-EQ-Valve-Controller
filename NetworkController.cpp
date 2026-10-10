@@ -16,6 +16,9 @@
 
 #include "InputController.h"
 #include "ConfigStore.h"
+#include "RtcController.h"
+#include <sys/time.h>
+#include <esp_sntp.h>
 
 // ETH_PHY_W5500 is an enum value in Arduino-ESP32, not a preprocessor macro.
 // Testing it with defined(ETH_PHY_W5500) therefore always evaluated to false
@@ -53,6 +56,14 @@ namespace {
   static bool s_timeValid = false;
   static uint32_t s_lastTimeCheckMs = 0;
   static String s_timeSource = "none";
+  static bool s_rtcAvailable = false;
+  static time_t s_lastRtcWritten = 0;
+  static volatile bool s_timeNeedsRtcWrite = false;
+  static volatile bool s_ntpSynchronized = false;
+  static void onSntpSync(struct timeval*) {
+    s_ntpSynchronized = true;
+    s_timeNeedsRtcWrite = true;
+  }
 
   static bool s_timeEnabled = true;
   static String s_tz = "CET-1CEST,M3.5.0,M10.5.0/3";
@@ -98,6 +109,7 @@ namespace {
   }
 
   static void configureTimeIfPossible(bool force = false);
+  static void updateTimeValidity();
 
 #if NETWORK_ETH_W5500_SUPPORTED
   static void onNetworkEvent(arduino_event_id_t event, arduino_event_info_t info) {
@@ -114,7 +126,7 @@ namespace {
       case ARDUINO_EVENT_ETH_GOT_IP:
         s_ethConnected = true;
         Serial.printf("[ETH] GOT IP: %s\n", ETH.localIP().toString().c_str());
-        configureTimeIfPossible(true);
+        // NTP configuration is performed from networkLoop(), never in the ETH callback.
         break;
       case ARDUINO_EVENT_ETH_LOST_IP:
         s_ethConnected = false;
@@ -188,29 +200,40 @@ namespace {
   }
 
   static void configureTimeIfPossible(bool force) {
+    loadTimeConfig();
+    setenv("TZ", s_tz.c_str(), 1);
+    tzset();
     if (!s_timeEnabled) {
+      if (s_timeConfigured) {
+        esp_sntp_stop();
+        s_ntpSynchronized = false;
+        s_timeNeedsRtcWrite = false;
+      }
       s_timeConfigured = false;
-      s_timeValid = false;
-      s_timeSource = "disabled";
+      updateTimeValidity();
+      if (!s_timeValid) s_timeSource = "disabled";
+      else if (s_timeSource == "sntp") s_timeSource = "system";
       return;
     }
     if (!anyIpConnected()) return;
     if (s_timeConfigured && !force) return;
 
-    loadTimeConfig();
-    setenv("TZ", s_tz.c_str(), 1);
-    tzset();
-
+    // configTime starts asynchronous SNTP. LAN IP access is sufficient; DNS or
+    // internet is not necessary when a local NTP IP is configured.
     // configTime expects UTC offset and DST; we use TZ env instead -> pass 0,0.
+    sntp_set_time_sync_notification_cb(onSntpSync);
     configTime(0, 0,
                s_ntp1.c_str(),
                s_ntp2.length() ? s_ntp2.c_str() : nullptr,
                s_ntp3.length() ? s_ntp3.c_str() : nullptr);
+    // Arduino configTime() may install a numeric/UTC timezone. Restore our
+    // explicit POSIX timezone for local schedules and CET/CEST switching.
+    setenv("TZ", s_tz.c_str(), 1);
+    tzset();
 
     s_timeConfigured = true;
-    s_timeSource = "sntp";
+    if (!s_timeValid) s_timeSource = "waiting_ntp";
     s_lastTimeCheckMs = 0;
-    s_timeValid = false;
   }
 
   static void updateTimeValidity() {
@@ -220,6 +243,12 @@ namespace {
     time_t now = time(nullptr);
     // Consider valid if after 2023-01-01
     s_timeValid = (now > (time_t)1672531200);
+    if (!s_timeValid) return;
+    if (s_ntpSynchronized) s_timeSource = "sntp";
+    if (s_timeNeedsRtcWrite && s_rtcAvailable &&
+        (s_lastRtcWritten == 0 || now - s_lastRtcWritten >= 3600)) {
+      if (rtcSetEpoch(now)) { s_lastRtcWritten = now; s_timeNeedsRtcWrite = false; }
+    }
   }
 
   static void startPortalOrAutoConnect(bool forcePortal) {
@@ -261,6 +290,21 @@ void networkInit() {
   if (s_inited) return;
   s_inited = true;
 
+  // The time zone must be established before reading the battery-backed RTC.
+  loadTimeConfig();
+  setenv("TZ", s_tz.c_str(), 1);
+  tzset();
+  rtcInit();
+  s_rtcAvailable = rtcIsPresent();
+  time_t rtcEpoch = 0;
+  if (s_rtcAvailable && rtcGetEpoch(rtcEpoch)) {
+    struct timeval tv = { rtcEpoch, 0 };
+    if (settimeofday(&tv, nullptr) == 0) {
+      s_timeValid = true;
+      s_timeSource = "rtc";
+      Serial.println("[TIME] Clock recovered from PCF85063 RTC (offline ready)");
+    }
+  }
   startEthernet();
 
   const bool portalOnce = takePortalOnceFlag();
@@ -306,7 +350,8 @@ void networkLoop() {
     s_portalActive = false;
   }
 
-  if (haveNet && s_timeConfigured) updateTimeValidity();
+  if (haveNet && !s_timeConfigured) configureTimeIfPossible(false);
+  updateTimeValidity();
 }
 
 void networkApplyConfig(const String& json) {
@@ -352,7 +397,6 @@ void networkApplyConfig(const String& json) {
     }
 
     if (touched) {
-      // Re-configure time immediately if possible.
       s_timeConfigured = false;
       configureTimeIfPossible(true);
     }
@@ -421,6 +465,18 @@ String networkGetTimeIso() {
 String networkGetTimeSource() {
   return s_timeSource;
 }
-bool networkIsRtcPresent() { return false; }
+bool networkIsRtcPresent() { return s_rtcAvailable; }
+
+bool networkSetTimeEpoch(time_t epoch) {
+  if (epoch <= (time_t)1672531200 || epoch > (time_t)4102444800LL) return false;
+  struct timeval tv = { epoch, 0 };
+  if (settimeofday(&tv, nullptr) != 0) return false;
+  s_timeValid = true;
+  s_timeSource = "manual";
+  s_ntpSynchronized = false;
+  s_timeNeedsRtcWrite = false;
+  if (s_rtcAvailable) rtcSetEpoch(epoch);
+  return true;
+}
 
 #endif
