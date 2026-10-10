@@ -109,6 +109,7 @@ namespace {
   }
 
   static void configureTimeIfPossible(bool force = false);
+  static void updateTimeValidity();
 
 #if NETWORK_ETH_W5500_SUPPORTED
   static void onNetworkEvent(arduino_event_id_t event, arduino_event_info_t info) {
@@ -204,8 +205,8 @@ namespace {
     tzset();
     if (!s_timeEnabled) {
       s_timeConfigured = false;
-      s_timeValid = false;
-      s_timeSource = "disabled";
+      updateTimeValidity();
+      if (!s_timeValid) s_timeSource = "disabled";
       return;
     }
     if (!anyIpConnected()) return;
@@ -462,6 +463,8 @@ bool networkSetTimeEpoch(time_t epoch) {
   if (settimeofday(&tv, nullptr) != 0) return false;
   s_timeValid = true;
   s_timeSource = "manual";
+  s_ntpSynchronized = false;
+  s_timeNeedsRtcWrite = false;
   if (s_rtcAvailable) rtcSetEpoch(epoch);
   return true;
 }
