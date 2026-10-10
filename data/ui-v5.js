@@ -58,10 +58,10 @@
       b.addEventListener("click",()=>{
         for(const [btn,p] of list){const active=btn===b;p.hidden=!active;btn.classList.toggle("is-active",active);btn.setAttribute("aria-selected",String(active));}
         if(view==="heating" || view==="mixing" || view==="accu") {
-          setTimeout(()=>window.redrawEquithermViews?.(),0);
+          setTimeout(()=>window.thermaRedrawEquitherm?.(),0);
           setTimeout(()=>window.renderMixCalibrationInfo?.(),0);
         }
-        if(view==="overview") setTimeout(()=>window.redrawEquithermViews?.(),0);
+        if(view==="overview") setTimeout(()=>window.thermaRedrawEquitherm?.(),0);
         drawTrend();
       });
     }
@@ -73,7 +73,7 @@
       '<strong>'+title+'</strong><span>'+subtitle+'</span><b aria-hidden="true">⌄</b>');
     const content=make("div","v5-advanced-body");
     put(content,...elements);put(box,s,content);
-    box.addEventListener("toggle",()=>{if(box.open)setTimeout(()=>window.redrawEquithermViews?.(),25)});
+    box.addEventListener("toggle",()=>{if(box.open)setTimeout(()=>window.thermaRedrawEquitherm?.(),25)});
     return box;
   }
   function metricsMarkup(prefix) {
@@ -270,8 +270,13 @@
     put(p.live,hero,first);
     if(head){head.classList.add("v5-action-head");put(p.cfg,head);}
     if(body)put(p.cfg,body);
-    if(heatPlanner)put(p.plan,heatPlanner);
-    if(plannerSave)put(p.plan,plannerSave);
+    if(heatPlanner){heatPlanner.open=true;put(p.plan,heatPlanner);}
+    if(plannerSave){
+      put(p.plan,plannerSave);
+      const saveCirc=make("button","btn primary","Uložit oba plány do zařízení");
+      saveCirc.type="button";saveCirc.addEventListener("click",()=>plannerSave.click());
+      put(p.circPlan,saveCirc);
+    }
     if(circPlanner){circPlanner.open=true;put(p.circPlan,circPlanner);}
     for(const node of importExport)put(p.circPlan,node);
     const circCfg=card("Nastavení cirkulačního čerpadla","Vstup IN3, časový program a přiřazení výstupního relé.");
@@ -415,7 +420,11 @@
       else put(p.system,d);
     }
     if(body)put(p.system,body);
-    for(const n of old)if(n!==main)put(p.system,n);
+    for(const n of old){
+      if(n===main)continue;
+      if(n.querySelector?.("#otaFwUploadBtn"))put(p.service,n);
+      else put(p.system,n);
+    }
   }
 
   let initialized=false;
