@@ -81,41 +81,43 @@
       <!-- Sections -->
       <section class="section active" id="view-overview" aria-label="Přehled">
         <div class="card">
-          <div class="card-head">
-            <div>
-              <h2>Status (živé dlaždice)</h2>
-              <div class="sub" id="ovUpdated">Aktualizace: --</div>
+          <div class="card-head status-head">
+            <div class="status-head-title">
+              <div class="status-head-label"><span class="status-live-dot" aria-hidden="true"></span><h2>Živý stav zařízení</h2></div>
+              <div class="sub" id="ovUpdated">Poslední aktualizace: --</div>
             </div>
-            <div class="row">
-              <span class="badge good" id="bOverall"><span class="b"></span>OK</span>
+            <div class="status-primary-badges" aria-label="Souhrnný stav regulace">
+              <span class="badge good" id="bOverall"><span class="b"></span>Stav: OK</span>
               <span class="badge" id="bMode"><span class="b"></span>Režim: auto</span>
-              <span class="badge" id="bSchedule"><span class="b"></span>Komfort/Útlum: komfort</span>
-              <span class="badge" id="eqAuditSource"><span class="b"></span>zdroj: --</span>
-              <span class="badge" id="eqAuditInput"><span class="b"></span>IN1: --</span>
-              <span class="badge" id="eqAuditSchedule"><span class="b"></span>plán: --</span>
-              <span class="badge" id="eqAuditTime"><span class="b"></span>čas: --</span>
-              <span class="badge" id="bDhwOtMode"><span class="b"></span>Kotel TUV přes OT: --</span>
+              <span class="badge" id="bSchedule"><span class="b"></span>Komfort/útlum: --</span>
             </div>
           </div>
+          <div class="status-meta-strip" aria-label="Aktuální zdroj řízení a vstupy">
+            <span class="badge" id="eqAuditSource"><span class="b"></span>Zdroj: --</span>
+            <span class="badge" id="eqAuditInput"><span class="b"></span>IN1: --</span>
+            <span class="badge" id="eqAuditSchedule"><span class="b"></span>Plán: --</span>
+            <span class="badge" id="eqAuditTime"><span class="b"></span>Čas: --</span>
+            <span class="badge" id="bDhwOtMode"><span class="b"></span>Kotel TUV (OT): --</span>
+          </div>
           <div class="card-body">
-            <div class="kpis">
+            <div class="kpis status-kpis">
               <div class="kpi">
-                <div class="t"><span>Venkovní</span><span class="mono" id="kpiOutTs">--</span></div>
+                <div class="t"><span>Venkovní teplota</span><span class="mono" id="kpiOutTs">--</span></div>
                 <div class="v"><span id="kpiOut">--</span> <span class="u">°C</span></div>
                 <canvas class="spark" id="sparkOut" width="300" height="64"></canvas>
               </div>
               <div class="kpi">
-                <div class="t"><span>Voda / topení</span><span class="mono" id="kpiChTs">--</span></div>
+                <div class="t"><span>Topná voda</span><span class="mono" id="kpiChTs">--</span></div>
                 <div class="v"><span id="kpiCH">--</span> <span class="u">°C</span></div>
                 <canvas class="spark" id="sparkCH" width="300" height="64"></canvas>
               </div>
               <div class="kpi">
-                <div class="t"><span>TUV</span><span class="mono" id="kpiDhwTs">--</span></div>
+                <div class="t"><span>Teplota TUV</span><span class="mono" id="kpiDhwTs">--</span></div>
                 <div class="v"><span id="kpiDHW">--</span> <span class="u">°C</span></div>
                 <canvas class="spark" id="sparkDHW" width="300" height="64"></canvas>
               </div>
               <div class="kpi">
-                <div class="t"><span>Tlak / stav</span><span class="mono" id="kpiPrTs">--</span></div>
+                <div class="t"><span>Tlak kotle</span><span class="mono" id="kpiPrTs">--</span></div>
                 <div class="v"><span id="kpiPr">--</span> <span class="u">bar</span></div>
                 <canvas class="spark" id="sparkPr" width="300" height="64"></canvas>
               </div>
@@ -125,7 +127,7 @@
                 <div class="u">Modulace: <span id="kpiPowerMeta">-- %</span></div>
               </div>
               <div class="kpi">
-                <div class="t"><span>Pož. teplota vody</span><span class="mono" id="kpiReqWaterTs">--</span></div>
+                <div class="t"><span>Požadavek kotle (OT)</span><span class="mono" id="kpiReqWaterTs">--</span></div>
                 <div class="v"><span id="kpiReqWater">--</span> <span class="u">°C</span></div>
                 <div class="u"><span id="kpiReqWaterMeta">--</span></div>
               </div>
@@ -318,113 +320,85 @@
               <button class="btn primary" id="hApply">Uložit změny</button>
             </div>
           </div>
-          <div class="card-body">
-            <div class="row" style="align-items:flex-end">
-              <div class="field">
-                <label for="hDaySlope">Komfort: sklon křivky</label>
-                <input id="hDaySlope" type="number" step="0.1" min="0" value="1.0" />
-              </div>
-              <div class="field">
-                <label for="hDayShift">Komfort: posun křivky</label>
-                <input id="hDayShift" type="number" step="0.5" value="0" />
-              </div>
+          <div class="card-body heating-body">
+            <div class="heating-config-layout">
+              <section class="heat-group heat-curves" aria-labelledby="heatCurvesTitle">
+                <div class="heat-group-head"><div><h3 id="heatCurvesTitle">Ekvitermní křivky</h3><p>Samostatné nastavení pro komfort a útlum.</p></div><span class="heat-group-icon" aria-hidden="true">♨</span></div>
+                <div class="heat-curve-set">
+                  <h4>Komfort</h4>
+                  <div class="heat-fields">
+                    <div class="field"><label for="hDaySlope">Sklon křivky</label><input id="hDaySlope" type="number" step="0.1" min="0" value="1.0" /></div>
+                    <div class="field"><label for="hDayShift">Posun křivky (°C)</label><input id="hDayShift" type="number" step="0.5" value="0" /></div>
+                  </div>
+                </div>
+                <div class="heat-curve-set">
+                  <h4>Útlum</h4>
+                  <div class="heat-fields">
+                    <div class="field"><label for="hNightSlope">Sklon křivky</label><input id="hNightSlope" type="number" step="0.1" min="0" value="0.7" /></div>
+                    <div class="field"><label for="hNightShift">Posun křivky (°C)</label><input id="hNightShift" type="number" step="0.5" value="-5" /></div>
+                  </div>
+                </div>
+                <div class="heat-curve-set heat-curve-limits">
+                  <h4>Bezpečné limity topné vody</h4>
+                  <div class="heat-fields">
+                    <div class="field"><label for="hMin">Minimální teplota (°C)</label><input id="hMin" type="number" step="0.5" min="10" max="90" value="22" /></div>
+                    <div class="field"><label for="hMax">Maximální teplota (°C)</label><input id="hMax" type="number" step="0.5" min="10" max="90" value="60" /></div>
+                  </div>
+                </div>
+              </section>
 
-              <div class="field">
-                <label for="hNightSlope">Útlum: sklon křivky</label>
-                <input id="hNightSlope" type="number" step="0.1" min="0" value="0.7" />
-              </div>
-              <div class="field">
-                <label for="hNightShift">Útlum: posun křivky</label>
-                <input id="hNightShift" type="number" step="0.5" value="-5" />
-              </div>
+              <div class="heating-side-stack">
+                <section class="heat-group" aria-labelledby="heatModeTitle">
+                  <div class="heat-group-head"><div><h3 id="heatModeTitle">Režim topení</h3><p>IN1, týdenní program a letní odstávka.</p></div></div>
+                  <div class="heat-fields heat-mode-fields">
+                    <div class="field">
+                      <label for="hEqModeCfg">Režim regulace</label>
+                      <select id="hEqModeCfg"><option value="auto">Automaticky (IN1 / plán)</option><option value="day">Komfort</option><option value="night">Útlum</option></select>
+                    </div>
+                    <label class="switch heat-switch"><input type="checkbox" id="hUseIn1NightOverride" /><span class="track"><span class="thumb"></span></span><span>IN1 aktivní → útlum</span></label>
+                    <label class="switch heat-switch"><input type="checkbox" id="hSummerModeEnabled" /><span class="track"><span class="thumb"></span></span><span>Povolit letní režim</span></label>
+                  </div>
+                  <div class="heat-fields heat-summer-fields">
+                    <div class="field"><label for="hSummerOffAboveC">Vypnout nad (°C)</label><input id="hSummerOffAboveC" type="number" step="0.5" value="18" /></div>
+                    <div class="field"><label for="hSummerOnBelowC">Zapnout pod (°C)</label><input id="hSummerOnBelowC" type="number" step="0.5" value="16" /></div>
+                  </div>
+                </section>
 
-              <div class="field">
-                <label for="hMin">Min. teplota topné vody</label>
-                <input id="hMin" type="number" step="0.5" min="10" max="90" value="22" />
-              </div>
-              <div class="field">
-                <label for="hMax">Max. teplota topné vody</label>
-                <input id="hMax" type="number" step="0.5" min="10" max="90" value="60" />
-              </div>
+                <section class="heat-group heat-boiler" aria-labelledby="heatBoilerTitle">
+                  <div class="heat-group-head"><div><h3 id="heatBoilerTitle">Požadavek kotle přes OpenTherm</h3><p>Offset se přičte pouze v režimu komfort.</p></div></div>
+                  <div class="heat-boiler-main">
+                    <label class="switch heat-switch"><input type="checkbox" id="hBoilerAssistEnabled" /><span class="track"><span class="thumb"></span></span><span>Navýšit teplotu kotle v komfortu</span></label>
+                    <div class="field heat-offset-field">
+                      <label for="hBoilerAssistDeltaC">Navýšení teploty kotle (°C)</label>
+                      <input id="hBoilerAssistDeltaC" type="number" min="0" max="20" step="0.5" value="5" inputmode="decimal" />
+                      <small>Příklad: ekviterm 30 °C + offset 5 °C = OT požadavek 35 °C; platí maximální limity.</small>
+                    </div>
+                  </div>
+                  <details class="heat-advanced">
+                    <summary>Pokročilá nastavení kotle</summary>
+                    <div class="heat-advanced-body">
+                      <label class="switch heat-switch"><input type="checkbox" id="hWrite57" /><span class="track"><span class="thumb"></span></span><span>Zapisovat limit kotle (OT ID57)</span></label>
+                      <div class="field"><label for="hBoilerMax">Maximální teplota kotle (°C)</label><input id="hBoilerMax" type="number" min="10" max="90" step="0.5" value="60" /></div>
+                      <label class="switch heat-switch"><input type="checkbox" id="hBoilerAssistForceChEnable" /><span class="track"><span class="thumb"></span></span><span>Vynucení CH enable (rezervovaná volba)</span></label>
+                    </div>
+                  </details>
+                </section>
 
-              <label class="switch">
-                <input type="checkbox" id="hWrite57" checked />
-                <span class="track"><span class="thumb"></span></span>
-                <span>Zapisovat Max CH (ID57)</span>
-              </label>
-              <div class="field">
-                <label for="hBoilerMax">Max CH pro kotel</label>
-                <input id="hBoilerMax" type="number" step="0.5" value="60" />
+                <section class="heat-group heat-relays" aria-labelledby="heatRelayTitle">
+                  <div class="heat-group-head"><div><h3 id="heatRelayTitle">Relé komfort / útlum</h3><p>Nezávislé přepínání externího kontaktu.</p></div></div>
+                  <div class="heat-fields heat-relay-fields">
+                    <label class="switch heat-switch"><input type="checkbox" id="hDriveNightRelay" /><span class="track"><span class="thumb"></span></span><span>Ovládat relé podle režimu</span></label>
+                    <div class="field"><label for="hNightRelay">Ovládané relé</label><select id="hNightRelay"><option value="3">Relé 3</option><option value="4">Relé 4</option><option value="5">Relé 5</option><option value="6">Relé 6</option><option value="7">Relé 7</option><option value="8">Relé 8</option></select></div>
+                    <label class="switch heat-switch"><input type="checkbox" id="hNightRelayOnWhenNight" /><span class="track"><span class="thumb"></span></span><span>Sepnout při útlumu</span></label>
+                  </div>
+                </section>
               </div>
             </div>
-            <div class="sp"></div>
-            <div class="row" style="align-items:flex-start; gap:12px">
-              <span class="muted" id="hOtMaxBounds">OT Max CH (ID57): --</span>
-              <span class="muted" id="hOtDhwBounds">OT TUV (ID56): --</span>
-              <span class="muted" id="hOtReqInfo">OT požadavky: --</span>
+            <div class="heat-info-strip" aria-label="Aktuální informace OpenTherm">
+              <span id="hOtMaxBounds">OT Max CH (ID57): --</span>
+              <span id="hOtDhwBounds">OT TUV (ID56): --</span>
+              <span id="hOtReqInfo">OT požadavky: --</span>
             </div>
-
-            <div class="sp"></div>
-            <div class="row" style="align-items:flex-end">
-              <div class="field">
-                <label for="hEqModeCfg">Režim ekvitermu</label>
-                <select id="hEqModeCfg">
-                  <option value="auto">auto</option>
-                  <option value="day">komfort</option>
-                  <option value="night">útlum</option>
-                </select>
-              </div>
-              <label class="switch">
-                <input type="checkbox" id="hUseIn1NightOverride" />
-                <span class="track"><span class="thumb"></span></span>
-                <span>Vstup IN1 přepíná komfort / útlum</span>
-              </label>
-              <label class="switch">
-                <input type="checkbox" id="hSummerModeEnabled" />
-                <span class="track"><span class="thumb"></span></span>
-                <span>Povolit letní režim</span>
-              </label>
-              <div class="field">
-                <label for="hSummerOffAboveC">Vypnout topení nad (°C)</label>
-                <input id="hSummerOffAboveC" type="number" step="0.5" value="18" />
-              </div>
-              <div class="field">
-                <label for="hSummerOnBelowC">Znovu povolit pod (°C)</label>
-                <input id="hSummerOnBelowC" type="number" step="0.5" value="16" />
-              </div>
-            </div>
-
-            <div class="sp"></div>
-            <div class="row" style="align-items:flex-end">
-              <label class="switch">
-                <input type="checkbox" id="hDriveNightRelay" />
-                <span class="track"><span class="thumb"></span></span>
-                <span>Spínat relé komfort / útlum</span>
-              </label>
-              <div class="field">
-                <label for="hNightRelay">Relé komfort / útlum</label>
-                <select id="hNightRelay">
-                  <option value="3">Relé3</option><option value="4">Relé4</option>
-                  <option value="5">Relé5</option><option value="6">Relé6</option><option value="7">Relé7</option><option value="8">Relé8</option>
-                </select>
-              </div>
-              <label class="switch">
-                <input type="checkbox" id="hNightRelayOnWhenNight" />
-                <span class="track"><span class="thumb"></span></span>
-                <span>Relé sepnuté při útlumu</span>
-              </label>
-              <label class="switch">
-                <input type="checkbox" id="hBoilerAssistEnabled" />
-                <span class="track"><span class="thumb"></span></span>
-                <span>Povolit podporu topení z AKU</span>
-              </label>
-              <label class="switch">
-                <input type="checkbox" id="hBoilerAssistForceChEnable" />
-                <span class="track"><span class="thumb"></span></span>
-                <span>Při podpoře vynutit CH enable</span>
-              </label>
-            </div>
-
             <div class="sp"></div>
             <div class="mixing-shortcut">
               <div class="mixing-shortcut-icon" aria-hidden="true">⌘</div>
@@ -1881,5 +1855,13 @@
   </div>
 
   <script defer src="/app.js?v=3.8.0"></script>
+
+  <aside id="pendingSaveBar" class="pending-save-bar" hidden role="region" aria-label="Neuložené změny konfigurace">
+    <div class="pending-save-info">
+      <span class="pending-save-icon" aria-hidden="true">✎</span>
+      <div><strong>Neuložené změny</strong><span id="pendingSaveSummary" aria-live="polite">Upravili jste konfiguraci.</span></div>
+    </div>
+    <div id="pendingSaveActions" class="pending-save-actions"></div>
+  </aside>
 </body>
 </html>
