@@ -350,7 +350,15 @@
     if(head){head.classList.add("v5-action-head");section.appendChild(head);}
     const p=tabs("thermometers",[["sensors","◉ DS18B20"],["ports","◇ Směšovací porty"],["ble","◌ BLE a další"]],section);
     for(const d of details){
-      if(d.querySelector("#thMapTbl")||d.querySelector("#thDsTbl"))put(p.sensors,d);
+      if(d.querySelector("#otaFwUploadBtn")){
+        // OTA belongs in system diagnostics, never on the thermometer page.
+        d.remove();
+        const diagnostic=byId("view-diag");
+        if(diagnostic){
+          const service=byId("v5-diag-service")||diagnostic;
+          put(service,d);
+        }
+      } else if(d.querySelector("#thMapTbl")||d.querySelector("#thDsTbl"))put(p.sensors,d);
       else if(d.querySelector("#mixTempSourceA"))put(p.ports,d);
       else put(p.ble,d);
     }
@@ -426,6 +434,22 @@
     const n=doc.querySelector(selector);
     if(n)n.dataset.active=active===null?"unknown":(active?"yes":"no");
   }
+  function v5CirculationState(s){
+    const fast=s.dhwFast||{}, status=s.dhwStatus||{};
+    const relayIndex=Number(s.dev?.dhwCfgRaw?.circ?.relay||4)-1;
+    const relay=typeof fast.rr==="boolean"?fast.rr:
+      typeof status.circRelayOn==="boolean"?status.circRelayOn:
+      Array.isArray(s.io?.relays)?s.io.relays[Math.max(0,Math.min(7,relayIndex))]:null;
+    return {
+      relay:typeof relay==="boolean"?relay:null,
+      requested:typeof fast.cr==="boolean"?fast.cr:typeof status.circRequested==="boolean"?status.circRequested:null,
+      pulse:typeof fast.cp==="boolean"?fast.cp:null,
+      scheduled:typeof fast.cs==="boolean"?fast.cs:null,
+      input:typeof fast.ci==="boolean"?fast.ci:null,
+      relayNo:relayIndex+1
+    };
+  }
+
   function modeValue(s) {
     const x=String(s?.eqFast?.me||s?.eqStatus?.mode?.eff||"").toLowerCase();
     return x==="day"?"Komfort":x==="night"?"Útlum":x==="auto"?"Automatický":"—";
@@ -518,6 +542,31 @@
       text(prefix+"-target",temp(req));text(prefix+"-mixed",temp(ab));
       text(prefix+"-tank",temp(tank));text(prefix+"-dhw",temp(hotWater));
     }
+    const circ=v5CirculationState(s);
+    text("v5-overview-mode",mode);
+    text("v5-overview-in1",in1===true?"Aktivní · útlum":in1===false?"Neaktivní":"—");
+    text("v5-overview-ot",link?"Připojeno":"Nedostupné");
+    const circStatus=circ.relay===true?"Čerpadlo běží":circ.relay===false?"Čerpadlo stojí":"Stav neznámý";
+    text("v5-overview-circ",circStatus);
+    text("v5-circ-state",circStatus);
+    text("v5-circ-relay","Výstup R"+circ.relayNo+" • "+
+      (circ.relay===true?"sepnuto":circ.relay===false?"vypnuto":"stav není dostupný"));
+    text("v5-circ-request",circ.requested===true?"Aktivní":circ.requested===false?"Neaktivní":"—");
+    text("v5-circ-source",circ.input===true?"Vstup IN3":circ.scheduled===true?"Týdenní plán":
+      circ.requested===false?"Bez požadavku":"—");
+    text("v5-circ-pulse",circ.pulse===true?"Běh":circ.pulse===false?"Přestávka":"—");
+    text("v5-circ-temp",temp(hotWater));
+    const circWidget=byId("v5-circ-widget");
+    if(circWidget)circWidget.dataset.running=circ.relay===null?"unknown":circ.relay?"yes":"no";
+    const mxA=finite(mix.aC,eq.mix?.ma),mxB=finite(mix.bC,eq.mix?.mb);
+    text("v5-ov-mix-a",temp(mxA));text("v5-ov-mix-b",temp(mxB));
+    text("v5-ov-mix-ab",temp(ab));text("v5-ov-mix-goal",temp(mixGoal));
+    text("v5-ov-mix-pos",pct(pos));
+    text("v5-ov-mix-dir",String(mix.direction||mix.dir||"stop").toLowerCase()==="a"?"Pohyb → A":
+      String(mix.direction||mix.dir||"stop").toLowerCase()==="b"?"Pohyb → B":"Ventil stojí");
+    const meter=byId("v5-ov-mix-meter"),fill=byId("v5-ov-mix-fill");
+    if(meter)meter.setAttribute("aria-valuenow",Number.isFinite(pos)?String(Math.max(0,Math.min(100,Math.round(pos)))):"0");
+    if(fill)fill.style.width=Number.isFinite(pos)?Math.max(0,Math.min(100,pos))+"%":"0%";
     text("v5-live-mode",mode);text("v5-live-in1",in1===true?"Aktivní (útlum)":in1===false?"Neaktivní":"—");
     text("v5-live-dhw",dhwActive?"Ohřev aktivní":"Neaktivní");
     text("v5-live-ot",link?"Online":"Nedostupná");
