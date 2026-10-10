@@ -8,6 +8,7 @@
 #include <WebSocketsServer.h>
 #include <ArduinoJson.h>
 #include <LittleFS.h>
+#include <Preferences.h>
 #include <Update.h>
 #include <esp_ota_ops.h>
 #include <esp_partition.h>
@@ -1673,6 +1674,20 @@ namespace {
       const bool provisioned = bootPrefs.getBool("nvs_ready", false);
       bootPrefs.end();
       if (provisioned) return 0;
+    }
+    // Existing deployed units may already have NVS settings without the
+    // new provisioning marker. Never overwrite those with a stale export.
+    Preferences cfgPrefs;
+    if (cfgPrefs.begin("cfg", true)) {
+      const bool populated = cfgPrefs.isKey("ot_en") || cfgPrefs.isKey("eq_en") ||
+                             cfgPrefs.isKey("dhw_en") || cfgPrefs.isKey("t_tz");
+      cfgPrefs.end();
+      if (populated) {
+        Preferences p;
+        if (p.begin("bootcfg", false)) { p.putBool("nvs_ready", true); p.end(); }
+        Serial.println("[WEB] Existing NVS config preserved; skipping LittleFS boot import");
+        return 0;
+      }
     }
 
     size_t applied = 0;
