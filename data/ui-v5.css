@@ -137,3 +137,74 @@
 @media(max-width:1250px){.therma-v5 .v5-mixing-stage{grid-template-columns:1fr}.therma-v5 .v5-main-split{grid-template-columns:1fr}.therma-v5 .v5-flow-main{grid-template-columns:minmax(120px,1fr) 38px minmax(125px,1fr) 38px minmax(120px,1fr)}}
 @media(max-width:850px){.therma-v5 .v5-two-panels{grid-template-columns:1fr}.therma-v5 .v5-metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.therma-v5 .v5-flow-unit{min-height:130px;padding:12px 6px}.therma-v5 .v5-flow-unit>strong{font-size:19px}.therma-v5 .v5-flow-secondary{grid-template-columns:1fr}.therma-v5 .v5-tank-layout{grid-template-columns:1fr}.therma-v5 .v5-dhw-dashboard{grid-template-columns:1fr}.therma-v5 .v5-dhw-vessel{height:220px}.therma-v5 .v5-relay-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:620px){.therma-v5 .v5-flow-main{grid-template-columns:1fr;gap:5px}.therma-v5 .v5-flow-unit{min-height:100px;grid-template-columns:45px minmax(0,1fr) auto;justify-items:start;align-items:center;gap:9px;text-align:left}.therma-v5 .v5-flow-unit>span{grid-column:2;grid-row:1}.therma-v5 .v5-flow-unit>strong{grid-column:2;grid-row:2}.therma-v5 .v5-flow-unit>small{grid-column:3;grid-row:2;text-align:right}.therma-v5 .v5-flow-symbol{grid-column:1;grid-row:1/3}.therma-v5 .v5-flow-connector{height:16px;display:flex;justify-content:center;align-items:center;gap:8px}.therma-v5 .v5-flow-connector>i{width:24px;height:2px;transform:rotate(90deg)}.therma-v5 .v5-flow-connector>span{display:none}.therma-v5 .v5-feature-hero{padding:20px;gap:10px}.therma-v5 .v5-feature-side strong{font-size:17px}.therma-v5 .v5-feature-hero>div:first-child>strong{font-size:36px}.therma-v5 .v5-digital-grid{grid-template-columns:1fr}.therma-v5 .v5-ot-overview,.therma-v5 .v5-diagnostics-overview{grid-template-columns:1fr}.therma-v5 .v5-metric{padding:13px}.therma-v5 .v5-metric strong{font-size:23px}.therma-v5 .v5-dhw-stats{grid-template-columns:1fr}.therma-v5 .v5-dhw-stats p{grid-column:auto}.therma-v5 .v5-tab{padding:10px 12px;font-size:11px}.therma-v5 .v5-flow-mini>small{display:none}}
+
+
+/* v5.1 - compact and practical monitoring, not a decorative flow map */
+.therma-v5 .v5-overview-head .v5-section-header{margin:0 0 10px}
+.therma-v5 .v5-overview-head h2{font-size:clamp(21px,2vw,27px)}
+.therma-v5 .v5-overview-head .v5-header-copy p{font-size:11px}
+.therma-v5 .v5-overview-status{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:0 0 11px}
+.therma-v5 .v5-overview-status>div{display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid var(--border);border-radius:10px;padding:10px 12px;background:var(--bg1)}
+.therma-v5 .v5-overview-status span{color:var(--fg2);font-size:10px;white-space:normal}
+.therma-v5 .v5-overview-status strong{font-size:11px;white-space:normal;text-align:right}
+.therma-v5 .v5-overview-metrics{margin:0 0 10px}
+.therma-v5 .v5-overview-metrics .v5-metric-grid{grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}
+.therma-v5 .v5-overview-metrics .v5-metric{padding:10px 11px;gap:4px}
+.therma-v5 .v5-overview-metrics .v5-metric span{font-size:10px}
+.therma-v5 .v5-overview-metrics .v5-metric strong{font-size:clamp(15px,1.65vw,23px);letter-spacing:-.4px}
+.therma-v5 .v5-overview-metrics .v5-metric small{font-size:9px}
+.therma-v5 .v5-overview-primary{display:grid;grid-template-columns:minmax(0,1.18fr) minmax(0,.82fr);gap:10px}
+.therma-v5 .v5-overview-primary .v5-card-head{padding:11px 14px}
+.therma-v5 .v5-overview-primary .v5-card-body{padding:13px}
+.therma-v5 .v5-mixer-visual{display:grid;gap:5px}
+.therma-v5 .v5-mixer-inlets{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.therma-v5 .v5-port{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:12px 14px;border-radius:11px;border:1px solid var(--border);background:var(--bg2)}
+.therma-v5 .v5-port span{color:var(--fg1);font-size:11px}
+.therma-v5 .v5-port strong{font-size:19px;font-variant-numeric:tabular-nums}
+.therma-v5 .v5-port.hot{border-left:3px solid #f08e55}
+.therma-v5 .v5-port.cold{border-left:3px solid #549dca}
+.therma-v5 .v5-mixer-join{display:flex;justify-content:center;align-items:center;gap:36px;height:35px;color:var(--fg2);font-size:17px}
+.therma-v5 .v5-mixer-join strong{color:var(--brand);font-size:26px}
+.therma-v5 .v5-mixer-out{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.therma-v5 .v5-mixer-out>div{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:13px;background:var(--bg2);border:1px solid var(--border);border-radius:10px}
+.therma-v5 .v5-mixer-out span{font-size:11px;color:var(--fg1)}
+.therma-v5 .v5-mixer-out strong{font-size:19px}
+.therma-v5 .v5-position-info{display:flex;align-items:center;justify-content:space-between;margin:14px 0 7px;font-size:11px;color:var(--fg1)}
+.therma-v5 .v5-position-info strong{font-size:13px;color:var(--fg0)}
+.therma-v5 .v5-position-bar{height:9px;border-radius:20px;background:var(--bg3);overflow:hidden}
+.therma-v5 .v5-position-bar i{display:block;background:var(--brand);height:100%;width:0;transition:width .24s ease}
+.therma-v5 .v5-position-captions{display:flex;justify-content:space-between;font-size:10px;color:var(--fg2);margin-top:5px}
+.therma-v5 .v5-mixer-foot{display:flex;justify-content:space-between;gap:8px;align-items:center;margin-top:10px;font-size:11px;color:var(--fg2)}
+.therma-v5 .v5-circ-current{display:flex;align-items:center;gap:15px;border:1px solid var(--border);border-radius:12px;padding:12px;background:var(--bg2)}
+.therma-v5 .v5-circ-pump-icon{height:58px;width:58px;flex:0 0 58px;border:1px solid var(--border);border-radius:50%;background:var(--bg1);display:grid;place-items:center;font-size:32px;color:var(--fg2)}
+.therma-v5 .v5-circ-current[data-running="yes"] .v5-circ-pump-icon{border-color:var(--good);color:var(--good)}
+.therma-v5 .v5-circ-current[data-running="yes"] .v5-circ-pump-icon span{display:block;animation:v5PumpRotate 2s linear infinite}
+@keyframes v5PumpRotate{to{transform:rotate(360deg)}}
+.therma-v5 .v5-circ-copy{display:grid;gap:4px}
+.therma-v5 .v5-circ-copy>span{font-size:9px;font-weight:800;letter-spacing:.08em;color:var(--fg2)}
+.therma-v5 .v5-circ-copy strong{font-size:17px;line-height:1.3}
+.therma-v5 .v5-circ-copy small{color:var(--fg2);font-size:10px}
+.therma-v5 .v5-circ-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:10px}
+.therma-v5 .v5-circ-facts>div{display:grid;gap:4px;padding:9px 10px;background:var(--bg2);border-radius:8px}
+.therma-v5 .v5-circ-facts span{color:var(--fg2);font-size:10px}
+.therma-v5 .v5-circ-facts strong{font-size:12px}
+.therma-v5 .v5-circ-buttons{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+.therma-v5 .v5-circ-buttons .btn{font-size:11px;padding:7px 9px}
+.therma-v5 .v5-overview-trend{margin-top:9px}
+.therma-v5 .v5-overview-trend .v5-trend-shell{max-height:225px}
+.therma-v5 .v5-heating-curve-workspace{display:grid;grid-template-columns:minmax(295px,.9fr) minmax(0,1.1fr);gap:12px;align-items:start}
+.therma-v5 .v5-curve-live-preview{background:var(--bg1);border:1px solid var(--border);border-radius:13px;min-width:0;padding:12px}
+.therma-v5 .v5-curve-preview-head{display:flex;justify-content:space-between;gap:8px;align-items:center;padding:2px 3px 11px}
+.therma-v5 .v5-curve-preview-head strong{font-size:12px}
+.therma-v5 .v5-curve-preview-head span{font-size:10px;color:var(--fg2)}
+.therma-v5 .v5-curve-live-preview .chartbox{padding:7px;border:0;background:var(--bg2)}
+.therma-v5 .v5-curve-live-preview canvas{display:block;width:100%;height:280px;min-height:280px}
+.therma-v5 .v5-circ-settings{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px;align-items:center}
+.therma-v5 .v5-circ-settings>.field,.therma-v5 .v5-circ-settings>label{min-width:0}
+.therma-v5 #v5-dhw-circCfg .v5-card{margin-bottom:11px}
+.therma-v5 #v5-dhw-circPlan .v5-card,.therma-v5 #v5-dhw-plan .v5-card{margin:0}
+.therma-v5 #view-thermometers select:focus{outline:2px solid var(--brand);outline-offset:2px}
+@media(max-width:1400px){.therma-v5 .v5-overview-metrics .v5-metric-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.therma-v5 .v5-heating-curve-workspace{grid-template-columns:1fr}.therma-v5 .v5-overview-primary{grid-template-columns:1fr 1fr}}
+@media(max-width:1000px){.therma-v5 .v5-overview-status{grid-template-columns:repeat(2,minmax(0,1fr))}.therma-v5 .v5-overview-primary{grid-template-columns:1fr}.therma-v5 .v5-overview-metrics .v5-metric-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:620px){.therma-v5 .v5-overview-metrics .v5-metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.therma-v5 .v5-overview-status{grid-template-columns:repeat(2,minmax(0,1fr))}.therma-v5 .v5-overview-status>div{display:grid;gap:4px}.therma-v5 .v5-overview-status strong{text-align:left}.therma-v5 .v5-mixer-inlets,.therma-v5 .v5-mixer-out{grid-template-columns:1fr}.therma-v5 .v5-mixer-join{height:27px}.therma-v5 .v5-circ-facts{grid-template-columns:1fr 1fr}.therma-v5 .v5-circ-pump-icon{width:46px;height:46px;flex-basis:46px}.therma-v5 .v5-circ-copy strong{font-size:14px}.therma-v5 .v5-circ-settings{grid-template-columns:1fr}.therma-v5 .v5-curve-preview-head{flex-wrap:wrap}}
+@media(prefers-reduced-motion:reduce){.therma-v5 .v5-circ-current[data-running="yes"] .v5-circ-pump-icon span{animation:none}}
