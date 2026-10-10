@@ -1,85 +1,41 @@
-<!doctype html>
-<html lang="cs">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="color-scheme" content="dark light" />
-  <meta name="theme-color" content="#0b0f17" media="(prefers-color-scheme: dark)">
-  <meta name="theme-color" content="#f7f8fb" media="(prefers-color-scheme: light)">
-  <title>ESP32 Controller • Moderní řízení vytápění</title>
-  <link rel="preload" href="/app.css?v=3.8.0" as="style">
-  <link rel="preload" href="/app.js?v=3.8.0" as="script">
-  <link rel="stylesheet" href="/app.css?v=3.8.0">
-</head>
-
-<body>
-  <div class="app" id="app">
-    <!-- Sidebar (desktop) -->
-    <aside class="sidebar" aria-label="Navigace">
-      <div class="side-head">
-        <div class="brand">
-          <div class="logo" aria-hidden="true"></div>
-          <div style="min-width:0">
-            <h1>ESP32 Controller</h1>
-            <small id="sbDevice">--</small>
-          </div>
-        </div>
-        <div class="side-actions">
-          <button class="iconbtn" id="btnTheme" title="Přepnout režim (T)"><span aria-hidden="true">☾</span><span class="sr-only">Téma</span></button>
-          <button class="iconbtn" id="btnRefresh" title="Obnovit data (R)"><span aria-hidden="true">⟲</span><span class="sr-only">Obnovit</span></button>
-        </div>
-      </div>
-
-      <nav class="nav" id="sideNav">
-        <a href="#overview" data-view="overview" aria-current="page"><span class="navicon" aria-hidden="true">⌂</span><span>Přehled</span></a>
-        <a href="#heating" data-view="heating"><span class="navicon" aria-hidden="true">♨</span><span>Topení</span></a>
-        <a href="#dhw" data-view="dhw"><span class="navicon" aria-hidden="true">◉</span><span>TUV</span></a>
-        <a href="#accu" data-view="accu"><span class="navicon" aria-hidden="true">▤</span><span>Akumulační nádrž</span></a>
-        <a href="#mixing" data-view="mixing"><span class="navicon" aria-hidden="true">⌘</span><span>Směšovací ventil</span></a>
-        <a href="#opentherm" data-view="opentherm"><span class="navicon" aria-hidden="true">◎</span><span>OpenTherm</span></a>
-        <a href="#thermometers" data-view="thermometers"><span class="navicon" aria-hidden="true">ϑ</span><span>Teploměry</span></a>
-        <a href="#io" data-view="io"><span class="navicon" aria-hidden="true">⇄</span><span>I/O</span></a>
-        <a href="#diag" data-view="diag"><span class="navicon" aria-hidden="true">⚙</span><span>Diagnostika</span></a>
-      </nav>
-
-      <div class="side-foot">
-        <div class="pillrow">
-          <span class="pill good"><span class="p"></span><span id="pillNet">LAN: ok</span></span>
-          <span class="pill warn"><span class="p"></span><span id="pillBle">BLE: ?</span></span>
-          <span class="pill"><span class="p"></span><span id="pillOT">OT: --</span></span>
-          <span class="pill"><span class="p"></span><span id="pillUptime">uptime: --</span></span>
-        </div>
-        <div class="muted">
-          Tip: T = téma, R = refresh, / = vyhledávání (desktop).
-        </div>
-        <div class="row" style="margin-top:10px">
-          <button class="btn danger" id="btnQuickReboot" type="button" title="Rychlý restart zařízení">↻ Restart zařízení</button>
-        </div>
-      </div>
-    </aside>
-
-    <!-- Main -->
-    <main class="main">
-      <!-- Topbar -->
-      <header class="topbar">
-        <div class="tb-left">
-          <div class="tb-title">
-            <strong id="tbTitle">Přehled</strong>
-            <span id="tbSubtitle">Kompaktní status + rychlé akce</span>
-          </div>
-        </div>
-
-        <div class="tb-right">
-<div id="tbOverviewActions" class="row" style="gap:10px;display:none">
-            <button class="btn danger" id="btnAllOff" title="Bezpečně zastavit řízené výstupy">⛔ Bezpečně zastavit</button>
-          </div>
-          <button class="btn" id="btnSetupWizard" title="Průvodce prvním nastavením zařízení">🧭 Průvodce nastavením</button>
-          <button class="btn primary" id="btnQuick" title="Rychlá akce">⚡ Rychlá akce</button>
-        </div>
-      </header>
-
-      <!-- Sections -->
-      <section class="section active" id="view-overview" aria-label="Přehled">
+<!doctype html><html lang="cs" data-ui-version="4"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#f4f7f9"><meta name="color-scheme" content="light dark">
+<meta name="description" content="THERMA - Řízení vytápění, TUV a směšovacího ventilu pro ESP32-S3.">
+<title>THERMA · Řízení vytápění</title><link rel="stylesheet" href="/app.css?v=4.0.0">
+</head><body class="ui-v4">
+<div class="app" id="app">
+ <aside class="sidebar" id="uiSidebar" aria-label="Hlavní navigace">
+  <div class="side-head">
+   <div class="brand"><div class="logo" aria-hidden="true">ϑ</div><div class="brand-copy"><h1>THERMA<span class="brand-mark">.</span></h1><small id="sbDevice">ESP32 Controller</small></div></div>
+   <div class="side-actions"><button class="iconbtn" id="btnTheme" type="button" title="Změnit barevný režim (T)" aria-label="Změnit barevný režim">☾</button><button class="iconbtn" id="btnRefresh" type="button" title="Obnovit stav (R)" aria-label="Obnovit aktuální stav">⟳</button></div>
+  </div>
+  <div class="sidebar-body"><div class="nav-label">PRACOVNÍ PLOCHA</div><nav id="sideNav" class="nav" aria-label="Stránky zařízení"><a href="#overview" data-view="overview" aria-current="page"><span class="navicon" aria-hidden="true">◫</span><span>Přehled</span><span class="nav-chevron" aria-hidden="true">›</span></a>
+<a href="#heating" data-view="heating"><span class="navicon" aria-hidden="true">♨</span><span>Topení</span><span class="nav-chevron" aria-hidden="true">›</span></a>
+<a href="#dhw" data-view="dhw"><span class="navicon" aria-hidden="true">◉</span><span>TUV</span><span class="nav-chevron" aria-hidden="true">›</span></a><div class="nav-label">REGULACE</div><a href="#accu" data-view="accu"><span class="navicon" aria-hidden="true">▥</span><span>Akumulační nádrž</span><span class="nav-chevron" aria-hidden="true">›</span></a>
+<a href="#mixing" data-view="mixing"><span class="navicon" aria-hidden="true">◇</span><span>Směšovací ventil</span><span class="nav-chevron" aria-hidden="true">›</span></a>
+<a href="#opentherm" data-view="opentherm"><span class="navicon" aria-hidden="true">⌁</span><span>OpenTherm</span><span class="nav-chevron" aria-hidden="true">›</span></a>
+<a href="#thermometers" data-view="thermometers"><span class="navicon" aria-hidden="true">◌</span><span>Teploměry</span><span class="nav-chevron" aria-hidden="true">›</span></a><div class="nav-label">SYSTÉM</div><a href="#io" data-view="io"><span class="navicon" aria-hidden="true">▦</span><span>Vstupy a výstupy</span><span class="nav-chevron" aria-hidden="true">›</span></a>
+<a href="#diag" data-view="diag"><span class="navicon" aria-hidden="true">⚙</span><span>Diagnostika</span><span class="nav-chevron" aria-hidden="true">›</span></a></nav>
+  <a href="/filemanager" class="sidebar-filemanager" target="_blank" rel="noopener noreferrer"><span>⇧</span><span>Správce souborů</span><span>↗</span></a></div>
+  <div class="side-foot"><div class="side-foot-title"><span class="foot-live-dot"></span> Stav zařízení</div>
+   <div class="pillrow"><span class="pill good"><span class="p"></span><span id="pillNet">LAN: --</span></span><span class="pill"><span class="p"></span><span id="pillOT">OT: --</span></span><span class="pill"><span class="p"></span><span id="pillBle">BLE: --</span></span></div>
+   <div class="sidebar-uptime"><span>Provoz</span><strong id="pillUptime">--</strong></div>
+   <button class="btn sidebar-reboot" id="btnQuickReboot" type="button" title="Restartovat zařízení">↻ <span>Restart zařízení</span></button>
+  </div>
+ </aside>
+ <div class="workspace">
+  <header class="topbar">
+   <div class="tb-left"><button class="iconbtn mobile-menu-toggle" id="btnSidebarToggle" type="button" aria-label="Otevřít navigaci" aria-controls="uiSidebar" aria-expanded="false">☰</button><div class="tb-title"><span class="tb-kicker">REGULACE VYTÁPĚNÍ / ESP32-S3</span><strong id="tbTitle">Přehled</strong><span id="tbSubtitle">Aktuální stav celého systému</span></div></div>
+   <div class="tb-right"><div class="connection-indicator" id="liveConnection" data-state="connecting" role="status" aria-live="polite"><span class="connection-dot"></span><span id="liveConnectionText">Připojuji…</span></div>
+    <button class="btn top-search" id="btnCommandSearch" type="button" title="Rychlá navigace (/)" aria-label="Hledat stránku"><span>⌕</span><span>Najít stránku</span><kbd>/</kbd></button>
+    <div id="tbOverviewActions" class="row top-danger" style="display:none"><button class="btn danger" id="btnAllOff" type="button" title="Bezpečně zastavit řízené výstupy">⏹ <span>Bezpečně zastavit</span></button></div>
+    <button class="btn top-setup" id="btnSetupWizard" type="button" title="Průvodce nastavením">⚙ <span>Nastavení</span></button>
+    <button class="btn primary top-quick" id="btnQuick" type="button" title="Rychlá akce TUV">⚡ <span>Rychlá akce</span></button>
+   </div>
+  </header>
+  <main class="main" id="uiMain"><section class="section view-screen active" id="view-overview" aria-label="Přehled">
+ <div class="page-hero"><div class="page-hero-copy"><span class="eyebrow"><i class="hero-live-mark"></i> ŘÍDICÍ PANEL / LIVE</span><h1>Vytápění pod kontrolou.</h1><p>Okamžitý přehled topného okruhu, kotle, TUV a akumulační nádrže.</p></div><div class="page-hero-actions"><button class="btn" type="button" data-open-view="heating">Nastavení topení ↗</button><button class="btn" type="button" data-open-view="mixing">Směšovací ventil ↗</button></div></div>
         <div class="card">
           <div class="card-head status-head">
             <div class="status-head-title">
@@ -302,7 +258,7 @@
 
       
 
-      <section class="section" id="view-heating" aria-label="Topení">
+      <section class="section view-screen" id="view-heating" aria-label="Topení">
         <div class="card">
           <div class="card-head">
             <div>
@@ -470,7 +426,7 @@
       </section>
 
 
-      <section class="section" id="view-mixing" aria-label="Trojcestný směšovací ventil">
+      <section class="section view-screen" id="view-mixing" aria-label="Trojcestný směšovací ventil">
         <div class="mix-page-head">
           <div>
             <h2>Trojcestný směšovací ventil</h2>
@@ -696,7 +652,7 @@
         </article>
       </section>
 
-      <section class="section" id="view-dhw" aria-label="TUV">
+      <section class="section view-screen" id="view-dhw" aria-label="TUV">
         <div class="card">
           <div class="card-head">
             <div>
@@ -967,7 +923,7 @@
 
       </section>
 
-      <section class="section" id="view-accu" aria-label="Akumulační nádrž">
+      <section class="section view-screen" id="view-accu" aria-label="Akumulační nádrž">
         <div class="card">
           <div class="card-head">
             <div>
@@ -1030,7 +986,7 @@
                 </section>
 
 
-      <section class="section" id="view-opentherm" aria-label="OpenTherm">
+      <section class="section view-screen" id="view-opentherm" aria-label="OpenTherm">
         <div class="card">
           <div class="card-head">
             <div>
@@ -1292,7 +1248,7 @@
         </div>
       </section>
 
-      <section class="section" id="view-thermometers" aria-label="Teploměry">
+      <section class="section view-screen" id="view-thermometers" aria-label="Teploměry">
         <div class="card">
           <div class="card-head">
             <div>
@@ -1462,7 +1418,7 @@
           </div>
         </div>
       </section>
-<section class="section" id="view-io" aria-label="I/O">
+<section class="section view-screen" id="view-io" aria-label="I/O">
         <div class="card">
           <div class="card-head">
             <div>
@@ -1502,7 +1458,7 @@
         </div>
       </section>
 
-      <section class="section" id="view-diag" aria-label="Diagnostika">
+      <section class="section view-screen" id="view-diag" aria-label="Diagnostika">
         <div class="card">
           <div class="card-head">
             <div>
@@ -1737,21 +1693,25 @@
         </div>
       </section>
 
-      <!-- Mobile bottom nav -->
-      <div class="bottomnav" role="navigation" aria-label="Spodní navigace">
-        <div class="bn" id="bottomNav">
-          <button data-view="overview" aria-current="page"><span class="ico">⌂</span><span>Přehled</span></button>
-          <button data-view="heating"><span class="ico">♨</span><span>Topení</span></button>
-          <button data-view="dhw"><span class="ico">🚿</span><span>TUV</span></button>
-          <button data-view="accu"><span class="ico">▤</span><span>AKU</span></button>
-          <button data-view="mixing"><span class="ico">⌘</span><span>Ventil</span></button>
-          <button data-view="opentherm"><span class="ico">◎</span><span>OT</span></button>
-          <button data-view="io"><span class="ico">⟷</span><span>I/O</span></button>
-          <button data-view="diag"><span class="ico">🛠</span><span>Diag</span></button>
-        </div>
-      </div>
-
-      <!-- Průvodce nastavením zařízení -->
+      </main>
+ </div>
+</div>
+<nav class="bottomnav" aria-label="Rychlá mobilní navigace"><div class="bn" id="bottomNav">
+ <button type="button" data-view="overview" aria-current="page"><span class="ico">◫</span><span>Přehled</span></button>
+ <button type="button" data-view="heating"><span class="ico">♨</span><span>Topení</span></button>
+ <button type="button" data-view="dhw"><span class="ico">◉</span><span>TUV</span></button>
+ <button type="button" data-view="mixing"><span class="ico">◇</span><span>Ventil</span></button>
+ <button type="button" id="btnMobileMore" aria-expanded="false" aria-controls="mobileMorePanel"><span class="ico">☷</span><span>Více</span></button>
+</div></nav>
+<div class="mobile-more-panel" id="mobileMorePanel" hidden role="dialog" aria-modal="false" aria-label="Další stránky">
+ <div class="mobile-more-head"><strong>Další stránky</strong><button class="iconbtn" id="btnMobileMoreClose" type="button" aria-label="Zavřít">✕</button></div>
+ <div class="mobile-more-links"><button type="button" data-more-view="accu"><span>▥</span>Akumulační nádrž<b aria-hidden="true">›</b></button>
+<button type="button" data-more-view="opentherm"><span>⌁</span>OpenTherm<b aria-hidden="true">›</b></button>
+<button type="button" data-more-view="thermometers"><span>◌</span>Teploměry<b aria-hidden="true">›</b></button>
+<button type="button" data-more-view="io"><span>▦</span>Vstupy a výstupy<b aria-hidden="true">›</b></button>
+<button type="button" data-more-view="diag"><span>⚙</span>Diagnostika<b aria-hidden="true">›</b></button></div><a class="mobile-more-file" href="/filemanager" target="_blank" rel="noopener noreferrer">Správce souborů ↗</a>
+</div>
+<!-- Průvodce nastavením zařízení -->
       <div class="setup-wizard-overlay" id="setupWizardOverlay" hidden>
         <div class="setup-wizard" role="dialog" aria-modal="true" aria-labelledby="setupWizardTitle">
           <header class="setup-wizard-head">
@@ -1849,19 +1809,9 @@
         </div>
       </div>
 
-      <!-- Toast -->
-      <div class="toast" id="toast" aria-live="polite" aria-atomic="true"></div>
-    </main>
-  </div>
-
-  <script defer src="/app.js?v=3.8.0"></script>
-
-  <aside id="pendingSaveBar" class="pending-save-bar" hidden role="region" aria-label="Neuložené změny konfigurace">
-    <div class="pending-save-info">
-      <span class="pending-save-icon" aria-hidden="true">✎</span>
-      <div><strong>Neuložené změny</strong><span id="pendingSaveSummary" aria-live="polite">Upravili jste konfiguraci.</span></div>
-    </div>
-    <div id="pendingSaveActions" class="pending-save-actions"></div>
-  </aside>
-</body>
-</html>
+      
+<div class="toast" id="toast" aria-live="polite" aria-atomic="false"></div>
+<aside id="pendingSaveBar" class="pending-save-bar" hidden role="region" aria-label="Neuložené změny konfigurace"><div class="pending-save-info"><span class="pending-save-icon" aria-hidden="true">✎</span><div><strong>Neuložené změny</strong><span id="pendingSaveSummary" aria-live="polite">Upravili jste konfiguraci.</span></div></div><div id="pendingSaveActions" class="pending-save-actions"></div></aside>
+<div class="quick-search-overlay" id="quickSearchOverlay" hidden role="dialog" aria-modal="true" aria-labelledby="quickSearchLabel"><div class="quick-search-dialog"><div class="quick-search-input-wrap"><span>⌕</span><label id="quickSearchLabel" class="sr-only" for="quickSearchInput">Rychlé hledání stránky</label><input id="quickSearchInput" type="search" autocomplete="off" placeholder="Kam chcete přejít?" aria-controls="quickSearchResults"><kbd>ESC</kbd></div><div class="quick-search-results" id="quickSearchResults"></div><div class="quick-search-foot">Enter: otevřít první výsledek · /: hledat · Esc: zavřít</div></div></div>
+<script defer src="/app.js?v=4.0.0"></script>
+</body></html>

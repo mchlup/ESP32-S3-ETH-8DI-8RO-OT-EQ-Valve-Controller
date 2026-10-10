@@ -243,6 +243,7 @@
     function setApiHealth(kind, text){
       setBadge("#bApi", kind || "", text || "API: --");
       setText("#apiState", text || "API: --");
+      thermaSetConnection(kind, text);
     }
 
     function debounce(fn, wait=120){
@@ -528,6 +529,10 @@
       if(location.hash !== `#${view}`) location.hash = view;
 
       updatePendingSaveBar();
+      thermaCloseMenus();
+      const moreBtn=document.getElementById("btnMobileMore");
+      if(moreBtn)moreBtn.setAttribute("aria-current",["accu","opentherm","thermometers","io","diag"].includes(view)?"page":"false");
+      if(changing && window.scrollY>0)window.scrollTo({top:0,behavior:"instant"});
       if(changing) log(`view -> ${view}`);
       if(view === "opentherm") { void otScanRefresh(); void otProfileRefresh(); }
       if(view === "diag") { void mqttLoad({ silent:true }); }
@@ -4428,6 +4433,7 @@ async function serviceIoCall(payload){
       if(!fast || typeof fast !== "object") return;
       const firstFast = !(state.fast || state.last);
       state.fast = mergeFastSnapshot(state.fast, fast);
+      thermaSetConnection("good", state.ws?.připojeno ? "WebSocket • živá data" : "API • aktuální data");
       applyFastToState(state.fast);
       state.net = state.net || {};
       state.net.lastFastOkMs = Date.now();
@@ -6527,6 +6533,136 @@ function initConfigTooltips(){
 
 // ----- Boot
     // ----- Boot
+
+/* THERMA 4.0 application shell: frontend-only enhancement.
+ * Device endpoints, WebSocket messages and all existing form handlers are reused.
+ */
+const THERMA_VIEWS = [
+  {id:"overview",name:"Přehled",icon:"◫",desc:"Živé hodnoty a stav systému"},
+  {id:"heating",name:"Topení",icon:"♨",desc:"Ekvitermní regulace a plán"},
+  {id:"dhw",name:"TUV",icon:"◉",desc:"Ohřev a cirkulace"},
+  {id:"accu",name:"Akumulační nádrž",icon:"▥",desc:"Teploty a energie"},
+  {id:"mixing",name:"Směšovací ventil",icon:"◇",desc:"Ventil a kalibrace"},
+  {id:"opentherm",name:"OpenTherm",icon:"⌁",desc:"Kotel a diagnostika OT"},
+  {id:"thermometers",name:"Teploměry",icon:"◌",desc:"DS18B20 a BLE"},
+  {id:"io",name:"Vstupy a výstupy",icon:"▦",desc:"Digitální vstupy a relé"},
+  {id:"diag",name:"Diagnostika",icon:"⚙",desc:"Systém, MQTT, konfigurace"}
+];
+const thermaShell = {searchOpen:false,moreOpen:false};
+function thermaSetConnection(kind,text){
+  const container=document.getElementById("liveConnection");
+  const label=document.getElementById("liveConnectionText");
+  if(!container||!label) return;
+  const type=kind==="good"?"online":(kind==="bad"?"offline":"connecting");
+  if(container.dataset.state!==type) container.dataset.state=type;
+  const next=type==="online"?"Připojeno":(type==="offline"?"Odpojeno":"Připojuji…");
+  if(label.textContent!==next)label.textContent=next;
+  container.title=String(text||next);
+}
+function thermaCloseMenus(){
+  const side=document.getElementById("uiSidebar");
+  const sideToggle=document.getElementById("btnSidebarToggle");
+  side?.classList.remove("mobile-open");
+  sideToggle?.setAttribute("aria-expanded","false");
+  const more=document.getElementById("mobileMorePanel");
+  if(more)more.hidden=true;
+  document.getElementById("btnMobileMore")?.setAttribute("aria-expanded","false");
+  thermaShell.moreOpen=false;
+}
+function thermaSearchOptions(query){
+  const norm=String(query||"").trim().toLocaleLowerCase("cs-CZ");
+  return THERMA_VIEWS.filter(x=>(x.name+" "+x.desc).toLocaleLowerCase("cs-CZ").includes(norm));
+}
+function thermaRenderSearch(query=""){
+  const host=document.getElementById("quickSearchResults");
+  if(!host)return;
+  const items=thermaSearchOptions(query);
+  host.replaceChildren();
+  if(!items.length){
+    const empty=document.createElement("div");
+    empty.className="muted";
+    empty.style.padding="20px";
+    empty.textContent="Žádná odpovídající stránka.";
+    host.appendChild(empty);return;
+  }
+  for(const [i,item] of items.entries()){
+    const btn=document.createElement("button");
+    btn.type="button";btn.dataset.targetView=item.id;
+    if(i===0)btn.dataset.selected="1";
+    const icon=document.createElement("span");icon.className="search-icon";icon.textContent=item.icon;
+    const label=document.createElement("span");label.textContent=item.name;
+    const desc=document.createElement("span");desc.className="search-desc";desc.textContent=item.desc;
+    btn.append(icon,label,desc);
+    btn.addEventListener("click",()=>{thermaCloseSearch();setView(item.id);});
+    host.appendChild(btn);
+  }
+}
+function thermaOpenSearch(){
+  const overlay=document.getElementById("quickSearchOverlay");
+  if(!overlay)return;
+  thermaCloseMenus();
+  overlay.hidden=false;thermaShell.searchOpen=true;
+  const input=document.getElementById("quickSearchInput");
+  if(input){input.value="";thermaRenderSearch();input.focus();}
+}
+function thermaCloseSearch(){
+  const overlay=document.getElementById("quickSearchOverlay");
+  if(overlay)overlay.hidden=true;
+  thermaShell.searchOpen=false;
+}
+function thermaInitShell(){
+  document.getElementById("btnSidebarToggle")?.addEventListener("click",()=>{
+    const side=document.getElementById("uiSidebar");
+    const opening=!side?.classList.contains("mobile-open");
+    thermaCloseMenus();
+    if(opening)side?.classList.add("mobile-open");
+    document.getElementById("btnSidebarToggle")?.setAttribute("aria-expanded",String(opening));
+  });
+  document.getElementById("btnMobileMore")?.addEventListener("click",()=>{
+    const panel=document.getElementById("mobileMorePanel");
+    const opening=!!panel?.hidden;
+    thermaCloseMenus();
+    if(panel)panel.hidden=!opening;
+    thermaShell.moreOpen=opening;
+    document.getElementById("btnMobileMore")?.setAttribute("aria-expanded",String(opening));
+  });
+  document.getElementById("btnMobileMoreClose")?.addEventListener("click",thermaCloseMenus);
+  document.querySelectorAll("[data-more-view]").forEach(btn=>btn.addEventListener("click",()=>{
+    const id=btn.dataset.moreView;
+    if(titles[id])setView(id);
+  }));
+  document.getElementById("btnCommandSearch")?.addEventListener("click",thermaOpenSearch);
+  document.getElementById("quickSearchInput")?.addEventListener("input",e=>thermaRenderSearch(e.target.value));
+  document.getElementById("quickSearchOverlay")?.addEventListener("click",e=>{
+    if(e.target===e.currentTarget)thermaCloseSearch();
+  });
+  window.addEventListener("keydown",e=>{
+    if(e.key==="Escape"){thermaCloseSearch();thermaCloseMenus();return;}
+    if(thermaShell.searchOpen){
+      if(e.key==="Enter"){
+        e.preventDefault();
+        document.querySelector("#quickSearchResults button[data-target-view]")?.click();
+      }
+      return;
+    }
+    if((e.key==="/"||((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k")) &&
+       !isEditableTarget(e.target)){
+      e.preventDefault();thermaOpenSearch();
+    }
+  },true);
+  document.addEventListener("pointerdown",e=>{
+    const sidebar=document.getElementById("uiSidebar");
+    const toggle=document.getElementById("btnSidebarToggle");
+    if(sidebar?.classList.contains("mobile-open")&&!sidebar.contains(e.target)&&!toggle?.contains(e.target)){
+      thermaCloseMenus();
+    }
+  },{passive:true});
+  window.addEventListener("resize",debounce(()=>{
+    if(window.innerWidth>1100)thermaCloseMenus();
+  },150),{passive:true});
+  thermaSetConnection("warn","Načítám stav zařízení");
+}
+
 function boot(){
   applyTheme();
 
@@ -6541,6 +6677,7 @@ function boot(){
   if(!Number.isFinite(Number(state.ot.maxCapacityKw))) state.ot.maxCapacityKw = 9;
 
   wire();
+  thermaInitShell();
   installPendingSaveTracking();
   initConfigTooltips();
   renderHeatingOtInfo();
