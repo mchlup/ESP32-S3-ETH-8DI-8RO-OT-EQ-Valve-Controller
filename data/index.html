@@ -2,7 +2,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#f4f7f9"><meta name="color-scheme" content="light dark">
 <meta name="description" content="THERMA - Řízení vytápění, TUV a směšovacího ventilu pro ESP32-S3.">
-<title>THERMA · Řízení vytápění</title><link rel="stylesheet" href="/app.css?v=5.0.0"><link rel="stylesheet" href="/ui-v5.css?v=5.0.0">
+<title>THERMA · Řízení vytápění</title><link rel="stylesheet" href="/app.css?v=5.0.0"><link rel="stylesheet" href="/ui-v5.css?v=5.1.0">
 </head><body class="ui-v4">
 <div class="app" id="app">
  <aside class="sidebar" id="uiSidebar" aria-label="Hlavní navigace">
@@ -280,6 +280,10 @@
             <div class="heating-config-layout">
               <section class="heat-group heat-curves" aria-labelledby="heatCurvesTitle">
                 <div class="heat-group-head"><div><h3 id="heatCurvesTitle">Ekvitermní křivky</h3><p>Samostatné nastavení pro komfort a útlum.</p></div><span class="heat-group-icon" aria-hidden="true">♨</span></div>
+                <div class="field heat-curve-mode-field"><label for="hCurveMode">Typ ekvitermní křivky</label>
+                  <select id="hCurveMode"><option value="linear2">2-bodová • sklon a posun</option><option value="tech_i3_4point">4-bodová • -20 / -10 / 0 / +10 °C</option></select>
+                </div>
+                <div id="hHeatCurve2Block" class="heat-curve-editor">
                 <div class="heat-curve-set">
                   <h4>Komfort</h4>
                   <div class="heat-fields">
@@ -293,6 +297,22 @@
                     <div class="field"><label for="hNightSlope">Sklon křivky</label><input id="hNightSlope" type="number" step="0.1" min="0" value="0.7" /></div>
                     <div class="field"><label for="hNightShift">Posun křivky (°C)</label><input id="hNightShift" type="number" step="0.5" value="-5" /></div>
                   </div>
+                </div>
+                
+                </div>
+                <div id="hHeatCurve4Block" class="heat-curve-editor" hidden>
+                  <div class="heat-curve-set"><h4>Komfort • topná voda při venkovní teplotě</h4><div class="heat-fields heat-four-points">
+                    <div class="field"><label for="hHeatDayM20">-20 °C</label><input id="hHeatDayM20" type="number" min="10" max="90" step="0.5" value="45"></div>
+                    <div class="field"><label for="hHeatDayM10">-10 °C</label><input id="hHeatDayM10" type="number" min="10" max="90" step="0.5" value="40"></div>
+                    <div class="field"><label for="hHeatDay0">0 °C</label><input id="hHeatDay0" type="number" min="10" max="90" step="0.5" value="35"></div>
+                    <div class="field"><label for="hHeatDayP10">+10 °C</label><input id="hHeatDayP10" type="number" min="10" max="90" step="0.5" value="30"></div>
+                  </div></div>
+                  <div class="heat-curve-set"><h4>Útlum • topná voda při venkovní teplotě</h4><div class="heat-fields heat-four-points">
+                    <div class="field"><label for="hHeatNightM20">-20 °C</label><input id="hHeatNightM20" type="number" min="10" max="90" step="0.5" value="42"></div>
+                    <div class="field"><label for="hHeatNightM10">-10 °C</label><input id="hHeatNightM10" type="number" min="10" max="90" step="0.5" value="37"></div>
+                    <div class="field"><label for="hHeatNight0">0 °C</label><input id="hHeatNight0" type="number" min="10" max="90" step="0.5" value="32"></div>
+                    <div class="field"><label for="hHeatNightP10">+10 °C</label><input id="hHeatNightP10" type="number" min="10" max="90" step="0.5" value="27"></div>
+                  </div></div>
                 </div>
                 <div class="heat-curve-set heat-curve-limits">
                   <h4>Bezpečné limity topné vody</h4>
@@ -566,6 +586,11 @@
                 </div>
               </div>
               <div class="mix-source-note">Výsledný regulační cíl = hodnota z vybrané křivky + offset, následně omezená minimem a maximem topné vody.</div>
+              <div class="mix-curve-preview">
+                <div class="mix-curve-preview-heading"><strong>Náhled zvolené ekvitermní křivky</strong><span id="mixCurvePreviewMode">2-bodová</span></div>
+                <canvas class="eqcanvas" id="eqChartMixing" width="900" height="320" aria-label="Náhled denní a noční křivky pro regulaci směšovacího ventilu"></canvas>
+                <p>Regulační cíl AB = ekvitermní topný bod + offset směšovače. Náhled sleduje rozpracované nastavení; firmware použije změny až po uložení.</p>
+              </div>
             </section>
 
             <section class="mix-config-group mix-cfg-regulation">
@@ -1813,6 +1838,6 @@
 <div class="toast" id="toast" aria-live="polite" aria-atomic="false"></div>
 <aside id="pendingSaveBar" class="pending-save-bar" hidden role="region" aria-label="Neuložené změny konfigurace"><div class="pending-save-info"><span class="pending-save-icon" aria-hidden="true">✎</span><div><strong>Neuložené změny</strong><span id="pendingSaveSummary" aria-live="polite">Upravili jste konfiguraci.</span></div></div><div id="pendingSaveActions" class="pending-save-actions"></div></aside>
 <div class="quick-search-overlay" id="quickSearchOverlay" hidden role="dialog" aria-modal="true" aria-labelledby="quickSearchLabel"><div class="quick-search-dialog"><div class="quick-search-input-wrap"><span>⌕</span><label id="quickSearchLabel" class="sr-only" for="quickSearchInput">Rychlé hledání stránky</label><input id="quickSearchInput" type="search" autocomplete="off" placeholder="Kam chcete přejít?" aria-controls="quickSearchResults"><kbd>ESC</kbd></div><div class="quick-search-results" id="quickSearchResults"></div><div class="quick-search-foot">Enter: otevřít první výsledek · /: hledat · Esc: zavřít</div></div></div>
-<script defer src="/ui-v5.js?v=5.0.0"></script>
-<script defer src="/app.js?v=5.0.0"></script>
+<script defer src="/ui-v5.js?v=5.1.0"></script>
+<script defer src="/app.js?v=5.1.0"></script>
 </body></html>
