@@ -694,7 +694,16 @@ function startWsWatchdog(){
   stopWsWatchdog();
   ws.watchdogTimer = setInterval(() => {
     const live = ensureWsState();
-    if(!live.připojeno || !live.sock || document.hidden) return;
+    if(!live.sock || document.hidden) return;
+    if(live.sock.readyState === WebSocket.CONNECTING){
+      if(Date.now() - Number(live.connectStartedMs || Date.now()) > 8000){
+        log("ws watchdog: handshake timeout, using HTTP fallback");
+        try{ live.sock.close(); }catch(_e){}
+        startFallbackPolling(computeOfflinePollMs());
+      }
+      return;
+    }
+    if(!live.připojeno) return;
     const age = Date.now() - Number(live.lastMessageMs || 0);
     if(age > 12000){
       log(`ws watchdog: bez dat ${Math.round(age/1000)} s`);
@@ -3195,11 +3204,17 @@ async function thermoSave(){
 
       ws.sock = sock;
       ws.připojeno = false;
+      ws.connectStartedMs = Date.now();
+      // The watchdog must cover CONNECTING too: on some networks a failed
+      // port-81 TCP handshake never fires onclose in a timely manner.
+      startWsWatchdog();
+      startFallbackPolling(computeOfflinePollMs());
       setApiHealth("warn", "API: WS připojuji…");
 
       sock.onopen = () => {
         const live = ensureWsState();
         live.připojeno = true;
+        live.connectStartedMs = 0;
         live.reconnectMs = 2000;
         live.failCount = 0;
         live.disabledUntilMs = 0;
