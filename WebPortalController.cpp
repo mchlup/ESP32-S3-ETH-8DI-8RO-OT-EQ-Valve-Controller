@@ -1330,12 +1330,10 @@ namespace {
     ba["forceChEnable"] = ec.boilerAssistForceChEnable;
   }
 
-  static void fillMixingSectionJson(JsonObject mix) {
-    mixingValveFillConfigJson(mix);
-
-    // Include weather-curve settings on the valve page while keeping their
-    // runtime ownership in EquithermController. The POST handler splits the
-    // curve object back to EquithermController.
+  // EquithermController is the single authoritative curve owner.
+  // Both /api/config/mixing and /api/mixing/status must expose the same
+  // mirrored curve; otherwise polling resets the mixing editor to linear2.
+  static void appendEquithermCurveToMixConfig(JsonObject mix) {
     EquithermConfig ec = equithermGetConfig();
     JsonObject curve = mix.createNestedObject("curve");
     curve["mode"] = ec.curveMode;
@@ -1350,6 +1348,11 @@ namespace {
     for (uint8_t i = 0; i < 4; ++i) { day4.add(ec.day4FlowC[i]); night4.add(ec.night4FlowC[i]); }
     curve["minFlowC"] = ec.minFlowC;
     curve["maxFlowC"] = ec.maxFlowC;
+  }
+
+  static void fillMixingSectionJson(JsonObject mix) {
+    mixingValveFillConfigJson(mix);
+    appendEquithermCurveToMixConfig(mix);
 
     JsonObject status = mix.createNestedObject("runtime");
     MixingValveStatus ms = mixingValveGetStatus();
@@ -2403,7 +2406,21 @@ namespace {
   }
 
   static void handleMixingStatus() {
-    sendJson(200, mixingValveGetStatusJson());
+    // Runtime JSON from MixingValveController contains valve-only fields.
+    // Keep the config snapshot self-consistent with /api/config/mixing.
+    const String raw = mixingValveGetStatusJson();
+    DynamicJsonDocument doc(16384);
+    if (deserializeJson(doc, raw) || !doc.is<JsonObject>()) {
+      sendJson(503, "{\"ok\":false,\"err\":\"mixing_status_invalid\"}");
+      return;
+    }
+    JsonObject cfg = doc["config"].as<JsonObject>();
+    if (cfg.isNull()) {
+      sendJson(503, "{\"ok\":false,\"err\":\"mixing_config_missing\"}");
+      return;
+    }
+    appendEquithermCurveToMixConfig(cfg);
+    sendJsonDoc(200, doc);
   }
 
   static void handleMixingCmd() {
