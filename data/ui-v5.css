@@ -243,3 +243,27 @@
 .therma-v5 #eqChartMixing{display:block;width:100%;height:245px;min-height:245px;margin-top:9px}
 .therma-v5 .mix-curve-preview p{font-size:11px;color:var(--fg2);line-height:1.5;margin:6px 0 0}
 @media(max-width:720px){.therma-v5 .heat-four-points{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* v5.2: one compact page navigation row, no duplicated headings or descriptions. */
+.therma-v5 .v5-section-header,.therma-v5 .v5-page-title-row{display:none!important}
+.therma-v5 .v5-overview-status{margin-top:0}
+.therma-v5 #v5-overview-pump[data-running="yes"]{
+  background:rgba(28,163,93,.105);border-color:rgba(41,205,112,.40);
+  box-shadow:inset 0 0 0 1px rgba(41,205,112,.06)
+}
+.therma-v5 #v5-overview-pump[data-running="yes"] strong{color:#55d995}
+.therma-v5 #v5-overview-pump[data-running="no"]{background:var(--bg1);border-color:var(--border)}
+.therma-v5 #v5-overview-pump[data-running="unknown"] strong{color:var(--fg2)}
+/* Overview and mixing page share the same responsive three-panel layout. */
+.therma-v5 .v5-overview-mixing-stage{margin-bottom:12px}
+.therma-v5 .v5-overview-mixing-stage>.mix-panel,
+.therma-v5 .v5-overview-mixing-stage>.v5-mix-aku-card{min-width:0}
+.therma-v5 .v5-mix-top-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin:0 0 12px}
+.therma-v5 .v5-mix-top-actions .badge{align-self:center}
+/* Compact page headers are provided already by the application's fixed top bar. */
+.therma-v5 #tbSubtitle{display:none!important}
+@media(max-width:560px){
+  .therma-v5 .v5-mix-top-actions{justify-content:flex-start}
+  .therma-v5 .v5-overview-mixing-stage .mix-manual-row{gap:5px}
+  .therma-v5 .v5-overview-mixing-stage .mix-manual-row .btn{min-width:0}
+}
