@@ -138,6 +138,10 @@ void buzzerPlayWarning(bool enable) {
     return;
   }
 
+  // PressureAlarmController calls this on every main-loop iteration.
+  // Restarting an already active pattern would keep step 0 (tone) playing
+  // forever, never reaching the pause or second beep.
+  if (s_pat.active && s_pat.warning) return;
   startPattern(
     kWarningPattern,
     (uint8_t)(sizeof(kWarningPattern) / sizeof(kWarningPattern[0])),
