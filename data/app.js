@@ -538,6 +538,9 @@
       if(moreBtn)moreBtn.setAttribute("aria-current",["accu","opentherm","thermometers","io","diag"].includes(view)?"page":"false");
       if(changing && window.scrollY>0)window.scrollTo({top:0,behavior:"instant"});
       if(changing) log(`view -> ${view}`);
+      // Adapt fallback polling immediately when entering/leaving the live
+      // valve dashboard instead of waiting for the next WS reconnect.
+      if(changing) updateRefreshCadence();
       if(view === "opentherm") { void otScanRefresh(); void otProfileRefresh(); }
       if(view === "diag") { void mqttLoad({ silent:true }); void journalDiagnosticsLoad({silent:true}); }
       if(view === "thermometers" && !state.th?.loaded && !state.th?.načítání) { void thermoLoad({ silent:true }); }
