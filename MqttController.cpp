@@ -16,6 +16,9 @@
 #include "EquithermController.h"
 #include "MixingValveController.h"
 #include "DhwController.h"
+#include "PressureAlarmController.h"
+#include "DeviceDiagnostics.h"
+#include "EventLog.h"
 #include "Log.h"
 
 namespace {
@@ -196,7 +199,7 @@ namespace {
   }
 
   static String buildStateJson() {
-    DynamicJsonDocument doc(4096);
+    DynamicJsonDocument doc(8192);
     doc["ms"] = (uint32_t)millis();
     doc["wifi"] = networkIsWifiConnected();
     doc["eth"] = networkIsEthernetConnected();
@@ -235,9 +238,19 @@ namespace {
     JsonObject mix = doc.createNestedObject("mix");
     mixingValveFillFastJson(mix);
 
+    JsonObject alerts = doc.createNestedObject("alerts");
+    pressureAlarmFillFastJson(alerts);
+    JsonObject diag = doc.createNestedObject("diag");
+    diag["heapFree"] = (uint32_t)ESP.getFreeHeap();
+    diag["heapMin"] = (uint32_t)ESP.getMinFreeHeap();
+    diag["heapMaxAlloc"] = (uint32_t)ESP.getMaxAllocHeap();
+    diag["psramFree"] = (uint32_t)ESP.getFreePsram();
+    diag["uptimeSec"] = (uint32_t)(millis() / 1000UL);
+
     JsonObject dhw = doc.createNestedObject("dhw");
     dhwFillFastJson(dhw);
 
+    if (doc.overflowed()) { mqttNoteError("state JSON overflow"); return String(); }
     String out;
     serializeJson(doc, out);
     return out;
@@ -329,6 +342,37 @@ namespace {
       {"mix_position", "Smesovaci ventil", "{{ value_json.mix.pct }}", "%", nullptr, "measurement", "mdi:valve"},
       {"boiler_pressure", "Tlak systemu", "{{ value_json.ot.pr }}", "bar", "pressure", "measurement", nullptr},
       {"boiler_setpoint", "Pozadovana CH", "{{ value_json.ot.cs }}", "°C", "temperature", "measurement", nullptr},
+      {"mix_a_temp", "Teplota port A", "{{ value_json.mix.ma }}", "°C", "temperature", "measurement", nullptr},
+      {"mix_b_temp", "Teplota port B", "{{ value_json.mix.mb }}", "°C", "temperature", "measurement", nullptr},
+      {"mix_ab_temp", "Teplota port AB", "{{ value_json.mix.mf }}", "°C", "temperature", "measurement", nullptr},
+      {"mix_target", "Cil smesovace", "{{ value_json.mix.tf }}", "°C", "temperature", "measurement", nullptr},
+      {"mix_base_target", "Zakladni cil smesovace", "{{ value_json.mix.bt }}", "°C", "temperature", "measurement", nullptr},
+      {"mix_error", "Odchylka smesovace", "{{ value_json.mix.er }}", "°C", "temperature", "measurement", nullptr},
+      {"mix_tank_source", "Zdroj AKU smesovace", "{{ value_json.mix.tk }}", "°C", "temperature", "measurement", nullptr},
+      {"mix_feedforward", "Feed-forward", "{{ value_json.mix.ff }}", "%", nullptr, "measurement", nullptr},
+      {"mix_trend", "Trend AB", "{{ value_json.mix.tr }}", "°C/min", nullptr, "measurement", nullptr},
+      {"mix_next_decision", "Dalsi rozhodnuti", "{{ value_json.mix.nd }}", "ms", "duration", "measurement", nullptr},
+      {"mix_pulse_remaining", "Zbyva pohyb", "{{ value_json.mix.prm }}", "ms", "duration", "measurement", nullptr},
+      {"eq_base_target", "Ekviterm zaklad", "{{ value_json.eq.tb }}", "°C", "temperature", "measurement", nullptr},
+      {"eq_target", "Ekviterm vysledny cil", "{{ value_json.eq.tf }}", "°C", "temperature", "measurement", nullptr},
+      {"eq_outside", "Ekviterm venkovni cidlo", "{{ value_json.eq.oc }}", "°C", "temperature", "measurement", nullptr},
+      {"ot_modulation", "Modulace kotle", "{{ value_json.ot.mt }}", "%", nullptr, "measurement", nullptr},
+      {"ot_capacity", "Maximalni vykon kotle", "{{ value_json.ot.cp }}", "kW", "power", "measurement", nullptr},
+      {"ot_return", "Zpatecka kotle OT", "{{ value_json.ot.rt }}", "°C", "temperature", "measurement", nullptr},
+      {"ot_dhw", "Teplota TUV OT", "{{ value_json.ot.dt }}", "°C", "temperature", "measurement", nullptr},
+      {"ot_outside", "Venkovni teplota OT", "{{ value_json.ot.ot }}", "°C", "temperature", "measurement", nullptr},
+      {"ot_room", "Pokojova teplota OT", "{{ value_json.ot.rm }}", "°C", "temperature", "measurement", nullptr},
+      {"ot_max_ch", "Max CH setpoint OT", "{{ value_json.ot.mx }}", "°C", "temperature", "measurement", nullptr},
+      {"ot_dhw_setpoint", "TUV setpoint OT", "{{ value_json.ot.dw }}", "°C", "temperature", "measurement", nullptr},
+      {"ble_humidity", "BLE vlhkost", "{{ value_json.ble.h }}", "%", "humidity", "measurement", nullptr},
+      {"ble_pressure", "BLE tlak", "{{ value_json.ble.p }}", "hPa", "atmospheric_pressure", "measurement", nullptr},
+      {"dhw_target", "Cil TUV", "{{ value_json.dhw.tg }}", "°C", "temperature", "measurement", nullptr},
+      {"dhw_return_temp", "Zpatecka cirkulace TUV", "{{ value_json.temps.dhw_return }}", "°C", "temperature", "measurement", nullptr},
+      {"alarm_pressure", "Tlak alarmu", "{{ value_json.alerts.p }}", "bar", "pressure", "measurement", nullptr},
+      {"heap_free", "Volna RAM", "{{ value_json.diag.heapFree }}", "B", "data_size", "measurement", nullptr},
+      {"heap_min", "Minimum RAM", "{{ value_json.diag.heapMin }}", "B", "data_size", "measurement", nullptr},
+      {"heap_max_alloc", "Nejvetsi blok RAM", "{{ value_json.diag.heapMaxAlloc }}", "B", "data_size", "measurement", nullptr},
+      {"uptime", "Doba provozu", "{{ value_json.diag.uptimeSec }}", "s", "duration", "measurement", nullptr},
     };
     for (const auto& def : sensors) {
       DynamicJsonDocument doc(1024);
@@ -339,6 +383,58 @@ namespace {
       if (def.stateClass) root["stat_cla"] = def.stateClass;
       if (def.icon) root["icon"] = def.icon;
       publishEntity("sensor", def.objectId, doc);
+    }
+
+    // Binary status of the heating control, boiler, TUV and pressure alarm.
+    struct BinaryDef { const char* id; const char* name; const char* expr; const char* icon; };
+    static const BinaryDef binary[] = {
+      {"ot_online","Kotel online","ot.lk","mdi:connection"},
+      {"ot_flame","Horení kotle","ot.fo","mdi:fire"},
+      {"ot_fault","Porucha kotle","ot.fl","mdi:alert"},
+      {"ot_ch_active","Kotel vytapi","ot.ca","mdi:radiator"},
+      {"ot_dhw_active","Kotel ohriva TUV","ot.da","mdi:water-boiler"},
+      {"eq_active","Ekviterm aktivni","eq.ac","mdi:radiator"},
+      {"eq_summer","Letni rezim","eq.sm","mdi:weather-sunny"},
+      {"mix_enabled","Smesovac povolen","mix.en","mdi:valve"},
+      {"mix_moving","Smesovac v pohybu","mix.mv","mdi:valve"},
+      {"mix_manual","Rucni pohyb smesovace","mix.man","mdi:hand-back-right"},
+      {"mix_heat_available","Dostupne teplo v AKU","mix.ha","mdi:heat-wave"},
+      {"mix_floor_protect","Ochrana podlahy","mix.fp","mdi:alert"},
+      {"dhw_heating","Ohrev TUV bezi","dhw.ha","mdi:water-boiler"},
+      {"dhw_circ_running","Cerpadlo cirkulace bezi","dhw.rr","mdi:pump"},
+      {"dhw_antilegionella","Anti-legionella aktivni","dhw.al","mdi:shield"},
+      {"alarm_pressure_active","Alarm tlaku","alerts.act","mdi:alarm-light"},
+      {"alarm_pressure_low","Nizky tlak","alerts.lo","mdi:alert"},
+      {"alarm_pressure_high","Vysoky tlak","alerts.hi","mdi:alert"},
+      {"wifi_connected","Wi-Fi online","wifi","mdi:wifi"},
+      {"ethernet_connected","Ethernet online","eth","mdi:ethernet"}
+    };
+    for (const auto& def : binary) {
+      DynamicJsonDocument doc(1024);
+      JsonObject root = addCommonEntityFields(doc, def.name, def.id);
+      root["val_tpl"] = String("{{ 'ON' if value_json.") + def.expr + " else 'OFF' }}";
+      root["pl_on"] = "ON"; root["pl_off"] = "OFF"; root["icon"] = def.icon;
+      publishEntity("binary_sensor", def.id, doc);
+    }
+    // Diagnostic text state (not every OT Data-ID exists on every boiler).
+    struct TextDef { const char* id; const char* name; const char* expr; };
+    static const TextDef texts[] = {
+      {"mix_state","Stav smesovace","mix.st"},
+      {"mix_reason","Duvod regulace","mix.rs"},
+      {"mix_direction","Smer ventilu","mix.dir"},
+      {"eq_mode","Efektivni rezim topeni","eq.me"},
+      {"eq_reason","Duvod ekvitermu","eq.rs"},
+      {"dhw_phase","Faze TUV","dhw.hp"},
+      {"dhw_mode","Rezim TUV","dhw.rm"},
+      {"ot_reason","Duvod OT","ot.rs"},
+      {"ot_source","OT zdroj","ot.src"}
+    };
+    for (const auto& def : texts) {
+      DynamicJsonDocument doc(1024);
+      JsonObject root = addCommonEntityFields(doc, def.name, def.id);
+      root["val_tpl"] = String("{{ value_json.") + def.expr + " | default('unknown', true) }}";
+      root["icon"] = "mdi:information-outline";
+      publishEntity("sensor", def.id, doc);
     }
 
     // R1/R2 are dedicated to the mixing-valve state machine. Remove any
@@ -362,8 +458,8 @@ namespace {
     }
 
     // Inputs as binary sensors
-    static const char* inputNames[3] = {"Vstup Den/Noc", "Vstup TUV", "Vstup cirkulace"};
-    for (uint8_t i = 0; i < 3; i++) {
+    static const char* inputNames[8] = {"Vstup Den/Noc", "Vstup TUV", "Vstup cirkulace", "Vstup 4", "Vstup 5", "Vstup 6", "Vstup 7", "Servisni vstup 8"};
+    for (uint8_t i = 0; i < 8; i++) {
       DynamicJsonDocument doc(1024);
       const String objectId = String("input_") + String(i + 1);
       JsonObject root = addCommonEntityFields(doc, inputNames[i], objectId.c_str());
@@ -441,7 +537,8 @@ namespace {
     const uint32_t now = millis();
     if (!force && (uint32_t)(now - s_st.lastPublishMs) < s_cfg.publishIntervalMs) return;
     s_st.lastPublishMs = now;
-    publishRaw(mqttTopicState(), buildStateJson(), true, 0);
+    const String payload = buildStateJson();
+    if (payload.length()) publishRaw(mqttTopicState(), payload, true, 0);
   }
 
   static void handleCmdRelay(const String& suffix, const String& payload) {
@@ -701,7 +798,7 @@ void mqttFillStatusJson(JsonObject& mqtt, bool includePreview) {
     const char* simpleEntities[] = {
       "sensor/outside_temp", "sensor/flow_temp", "sensor/return_temp", "sensor/dhw_temp",
       "sensor/tank_top_temp", "sensor/tank_mid_temp", "sensor/tank_bottom_temp", "sensor/mix_position",
-      "switch/relay_1", "switch/relay_2", "switch/relay_3", "switch/relay_4",
+      "switch/relay_3", "switch/relay_4",
       "switch/relay_5", "switch/relay_6", "switch/relay_7", "switch/relay_8",
       "binary_sensor/input_1", "binary_sensor/input_2", "binary_sensor/input_3",
       "switch/dhw_heat", "switch/dhw_circ", "select/equitherm_mode"
