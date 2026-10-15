@@ -12,6 +12,14 @@ namespace ConfigStore {
   void beginBatch();
   void endBatch();
 
+  // Cumulative write error counter. Compare before/after each API operation;
+  // errors are not cleared by unrelated writes or background services.
+  uint32_t persistenceFailureCount();
+  String lastPersistenceFailureKey();
+  // Inspect every NVS entry in the cfg namespace (not just selected flags).
+  // Existing configuration must never be overwritten by a stale LittleFS export.
+  bool hasPersistedConfiguration();
+
   class BatchGuard {
    public:
     BatchGuard() { beginBatch(); }
@@ -42,6 +50,9 @@ namespace ConfigStore {
   // Default false.
   bool getOtAllowRawWrite();
   void setOtAllowRawWrite(bool v);
+  // Additional supported OT runtime settings; stored separately from fixed pins.
+  String getOtAdvancedJson();
+  void setOtAdvancedJson(const String& json);
 
   // BLE (subset)
   bool getBleEnabled();
