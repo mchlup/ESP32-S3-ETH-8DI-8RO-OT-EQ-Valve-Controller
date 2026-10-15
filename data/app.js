@@ -539,7 +539,7 @@
       if(changing && window.scrollY>0)window.scrollTo({top:0,behavior:"instant"});
       if(changing) log(`view -> ${view}`);
       if(view === "opentherm") { void otScanRefresh(); void otProfileRefresh(); }
-      if(view === "diag") { void mqttLoad({ silent:true }); }
+      if(view === "diag") { void mqttLoad({ silent:true }); void journalDiagnosticsLoad({silent:true}); }
       if(view === "thermometers" && !state.th?.loaded && !state.th?.načítání) { void thermoLoad({ silent:true }); }
       if(changing || view === "overview" || view === "heating" || view === "mixing") {
         queueRenderSample(getUiSample());
@@ -4299,6 +4299,66 @@ async function timeSave(){
   toast("Čas", "Nastavení uloženo.", "✅");
 }
 
+async function journalDiagnosticsLoad(options={}) {
+  const silent = !!options.silent;
+  const summary = document.getElementById("diagJournalStats");
+  const output = document.getElementById("diagJournalTail");
+  const archives = document.getElementById("diagJournalArchives");
+  if(!summary || !output) return;
+  try {
+    const status = await api.getJson("/api/diagnostics/status", 6000);
+    const h = status?.health || {};
+    const labels = [
+      ["Příčina restartu", h.resetReason || "—"],
+      ["Předchozí modul", h.previousStage || "—"],
+      ["Max. délka smyčky", (h.loopMaxMs ?? "—") + " ms"],
+      ["Nejpomalejší modul", (h.slowestStage || "—") + " / " + (h.slowestStageMs ?? "—") + " ms"],
+      ["Pomalé smyčky", h.slowLoops ?? "—"],
+      ["Volná heap", fmtBytes(h.heapFree)],
+      ["Největší blok heap", fmtBytes(h.heapMaxAlloc)],
+      ["OT timeouty / hard timeouty", String(h.otTimeouts ?? "—") + " / " + String(h.otHardTimeouts ?? "—")],
+      ["OT chyby v řadě", h.otConsecutiveErrors ?? "—"],
+      ["WS klienti / připojení", String(h.wsClients ?? "—") + " / " + String(h.wsConnects ?? "—")],
+      ["Ethernet / Wi-Fi", (h.ethernet ? "ETH ON" : "ETH OFF") + " / " + (h.wifi ? "Wi-Fi ON" : "Wi-Fi OFF")],
+      ["LittleFS", h.littlefs ? "Připojeno" : "NEDOSTUPNÉ"],
+      ["Nevyřízené / zahozené záznamy", String(h.queuePending ?? "—") + " / " + String(h.queueDropped ?? "—")],
+      ["Chyby souborů", h.fileErrors ?? "—"],
+      ["Rotace logů", h.rotations ?? "—"]
+    ];
+    summary.replaceChildren();
+    for(const [name,value] of labels){
+      const item=document.createElement("div");
+      const title=document.createElement("span"); title.textContent=name;
+      const val=document.createElement("strong"); val.textContent=String(value);
+      item.append(title,val);summary.appendChild(item);
+    }
+    if(archives){
+      archives.replaceChildren();
+      for(const file of h.files || []){
+        if(!Number(file.bytes))continue;
+        const link=document.createElement("a");
+        link.className="btn";
+        link.textContent="Archiv "+file.part+" ("+fmtBytes(file.bytes)+")";
+        link.href=normalizedApiBase()+"/api/diagnostics/download?part="+Number(file.part);
+        link.download="therma-diagnostics-"+Number(file.part)+".jsonl";
+        archives.appendChild(link);
+      }
+    }
+    const ctrl=new AbortController();
+    const timeout=setTimeout(()=>ctrl.abort(),6000);
+    try{
+      const resp=await fetch(normalizedApiBase()+"/api/diagnostics/tail",{cache:"no-store",signal:ctrl.signal});
+      if(!resp.ok)throw new Error("HTTP "+resp.status);
+      const raw=await resp.text();
+      output.textContent=raw.trim() || "Zatím žádné záznamy v LittleFS.";
+    }finally{clearTimeout(timeout);}
+    if(!silent)toast("Diagnostika","Záznamy načteny.","✅");
+  }catch(e){
+    output.textContent="Chyba načítání: "+(e?.message || String(e));
+    if(!silent)toast("Diagnostika",e?.message || String(e),"⚠");
+  }
+}
+
 async function eventsLoad(options={}){
   const silent = !!options.silent;
   try{
@@ -6449,6 +6509,22 @@ updatePlannerStateBadges();
       }
       document.getElementById("timeRefresh")?.addEventListener("click", () => withButtonBusy(document.getElementById("timeRefresh"), "Načítám…", () => timeLoad({ silent:false })));
       document.getElementById("timeSave")?.addEventListener("click", () => withButtonBusy(document.getElementById("timeSave"), "Ukládám…", () => timeSave()));
+      document.getElementById("diagJournalRefresh")?.addEventListener("click",()=>withButtonBusy(
+        document.getElementById("diagJournalRefresh"),"Načítám…",()=>journalDiagnosticsLoad()));
+      document.getElementById("diagJournalDownload")?.addEventListener("click",()=>{
+        const link=document.createElement("a");
+        link.href=normalizedApiBase()+"/api/diagnostics/download?part=0";
+        link.download="therma-diagnostics.jsonl";document.body.appendChild(link);link.click();link.remove();
+      });
+      document.getElementById("diagJournalClear")?.addEventListener("click",async()=>{
+        if(!confirm("Smazat všechny trvalé diagnostické záznamy v LittleFS?"))return;
+        const button=document.getElementById("diagJournalClear");
+        await withButtonBusy(button,"Mažu…",async()=>{
+          await api.postJson("/api/diagnostics/clear",{});
+          await journalDiagnosticsLoad({silent:true});
+          toast("Diagnostika","Starší soubory logů byly vymazány.","✅");
+        });
+      });
       document.getElementById("eventsRefresh")?.addEventListener("click", () => withButtonBusy(document.getElementById("eventsRefresh"), "Načítám…", () => eventsLoad({ silent:false })));
       document.getElementById("eventsClear")?.addEventListener("click", async () => withButtonBusy(document.getElementById("eventsClear"), "Mažu…", async () => { await api.postJson("/api/events/clear", {}); await eventsLoad({ silent:true }); toast("Event log", "Vymazáno.", "🧹"); }));
       document.getElementById("historyRefresh")?.addEventListener("click", () => withButtonBusy(document.getElementById("historyRefresh"), "Načítám…", () => historyLoad({ silent:false })));
