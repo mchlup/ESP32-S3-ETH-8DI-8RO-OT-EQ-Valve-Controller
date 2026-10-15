@@ -4844,9 +4844,13 @@ async function serviceIoCall(payload){
         "Stykač topné tyče AKU",
       ];
 
+      // The current THERMA v5 I/O page renders cards instead of the original
+      // #relayTbl table. Preserve legacy support without crashing the 1 Hz
+      // DHW/I/O status renderer when the obsolete table is absent.
       const tbody = $("#relayTbl");
-      tbody.innerHTML = "";
-      for(let i=0;i<8;i++){
+      if(tbody){
+        tbody.replaceChildren();
+        for(let i=0;i<8;i++){
         const on = !!state.io.relays[i];
         const tr = document.createElement("tr");
         tr.innerHTML = `
@@ -4855,7 +4859,8 @@ async function serviceIoCall(payload){
           <td>${on ? '<span class="badge good"><span class="b"></span>ON</span>' : '<span class="badge"><span class="b"></span>OFF</span>'}</td>
           <td><button class="btn" type="button" disabled title="Provozní I/O je řízeno backendem">Diagnostika</button></td>
         `;
-        tbody.appendChild(tr);
+          tbody.appendChild(tr);
+        }
       }
 
       const inNames = [
@@ -4864,8 +4869,9 @@ async function serviceIoCall(payload){
         "Požadavek cirkulace (aktivní)",
       ];
       const inTb = $("#inTbl");
-      inTb.innerHTML = "";
-      for(let i=0;i<3;i++){
+      if(inTb){
+        inTb.replaceChildren();
+        for(let i=0;i<3;i++){
         const on = !!state.io.inputs[i];
         const tr = document.createElement("tr");
         tr.innerHTML = `
@@ -4873,9 +4879,12 @@ async function serviceIoCall(payload){
           <td><strong>${escapeHtml(inNames[i])}</strong></td>
           <td>${on ? '<span class="badge good"><span class="b"></span>1</span>' : '<span class="badge"><span class="b"></span>0</span>'}</td>
         `;
-        inTb.appendChild(tr);
+          inTb.appendChild(tr);
+        }
       }
 
+      // DHW live fields are still updated even when both legacy I/O tables
+      // are absent (normal case for the redesigned page).
       // dhw table binds
       const dhwf = state.dhwFast || {};
       setText("#dhwReq", (dhwf.hr ?? state.io.inputs[1]) ? "aktivní" : "neaktivní");
@@ -6671,10 +6680,40 @@ updatePlannerStateBadges();
       });
     }
 
+    // Include script/line information so recurring UI failures can be traced
+    // to their exact source. Suppress repetitive per-frame exceptions, but
+    // retain their repeat count in the next diagnostic entry.
+    const uiErrorSeen = new Map();
+    function reportUiException(kind, message, location) {
+      const msg = String(message || "unknown").slice(0, 240);
+      const where = String(location || "").slice(0, 100);
+      const key = kind + "|" + where + "|" + msg;
+      const now = Date.now();
+      const found = uiErrorSeen.get(key);
+      if(found && (now - found.lastLogged) < 30000){
+        found.suppressed++;
+        return;
+      }
+      const repeats = found?.suppressed || 0;
+      uiErrorSeen.set(key,{lastLogged:now,suppressed:0});
+      if(uiErrorSeen.size > 32) uiErrorSeen.delete(uiErrorSeen.keys().next().value);
+      log("ui error [" + kind + "]" + (where ? " (" + where + ")" : "")
+        + ": " + msg + (repeats ? " • opakováno " + repeats + "×" : ""));
+    }
     window.addEventListener("error", e => {
-  console.error("UI error:", e.message);
-  log("ui error: " + (e.message || e.error || "unknown"));
-});
+      console.error("UI error:", e.message, e.error || "");
+      const source = String(e.filename || "").split(/[\\/]/).pop();
+      const where = source ? source + ":" + (e.lineno || "?") + ":" + (e.colno || "?") : "";
+      reportUiException("runtime", e.message || e.error?.message, where);
+    });
+    window.addEventListener("unhandledrejection", e => {
+      const reason = e.reason;
+      console.error("UI unhandled promise:", reason);
+      const stackLine = typeof reason?.stack === "string"
+        ? (reason.stack.split("\n").slice(1).find(line => /\.js:\\d+/.test(line)) || "")
+        : "";
+      reportUiException("promise", reason?.message || String(reason), stackLine.trim());
+    });
 
 // ----- Contextual bubble tooltips for every configurable control
 const tooltipHelpById = {
