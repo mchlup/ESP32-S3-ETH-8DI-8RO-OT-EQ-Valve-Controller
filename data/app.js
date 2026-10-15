@@ -589,9 +589,11 @@ function maybeAdoptPageOriginBase(reason="runtime", silent=false){
 
 
 function computeOfflinePollMs(){
-  const base = document.hidden ? 30000 : 10000;
-  const backvypnuto = Number(state?.net?.nextPollMs ?? 10000);
-  return Math.max(base, backvypnuto);
+  const liveValvePage = !document.hidden && ["overview","mixing"].includes(
+    document.querySelector(".section.active")?.id?.replace(/^view-/,""));
+  const base = document.hidden ? 30000 : (liveValvePage ? 5000 : 10000);
+  const backoff = Number(state?.net?.nextPollMs ?? base);
+  return Math.max(base, Number.isFinite(backoff) ? backoff : base);
 }
 
 const mixWsPending = new Map();
@@ -4715,8 +4717,42 @@ async function serviceIoCall(payload){
       // BLE compact
       state.bleFast = (fast.ble && typeof fast.ble === "object") ? fast.ble : (state.bleFast || {});
 
-      // Equitherm compact
+      // Merge fast mixing data into the detailed snapshot before rendering.
+      // Otherwise the stale /api/mixing/status object masks every new 1 Hz WS
+      // position/temperature/countdown update for up to 30 seconds.
       state.eqFast = (fast.eq && typeof fast.eq === "object") ? fast.eq : (state.eqFast || {});
+      const liveMix = state.eqFast?.mix;
+      if(liveMix && typeof liveMix === "object"){
+        const current = {...(state.mixStatus || {})};
+        const numbers = {
+          ma:"aC",mb:"bC",mf:"abC",tk:"tankC",bt:"baseTargetC",
+          tf:"targetC",er:"errorC",ff:"feedForwardPct",pct:"positionPct",
+          prm:"pulseRemainingMs",elp:"pulseElapsedMs",tr:"trendCPerMin",
+          nd:"nextDecisionInMs"
+        };
+        const flags = {
+          en:"enabled",ac:"automaticAllowed",ha:"heatAvailable",
+          pt:"positionTrusted",mv:"moving",man:"movingManual",
+          rsp:"responsePending",fp:"floorProtectionActive",
+          hm:"hydraulicModelValid",rch:"targetReachable"
+        };
+        const strings = {
+          st:"state",rs:"reason",dir:"direction",
+          hmr:"hydraulicModelReason",rchr:"targetReachabilityReason"
+        };
+        for(const [short,long] of Object.entries(numbers)){
+          if(hasOwn(liveMix,short))current[long]=numOrNaN(liveMix[short]);
+        }
+        for(const [short,long] of Object.entries(flags)){
+          if(hasOwn(liveMix,short))current[long]=!!liveMix[short];
+        }
+        for(const [short,long] of Object.entries(strings)){
+          if(hasOwn(liveMix,short))current[long]=String(liveMix[short] ?? "");
+        }
+        state.mixStatus=current;
+        state.net = state.net || {};
+        state.net.lastMixLiveMs=Date.now();
+      }
       renderEquithermEnableControls();
       if(state.eqFast?.mix && typeof state.eqFast.mix === "object" && hasOwn(state.eqFast.mix, "pct")){
         state.accu.valve = numOrNaN(state.eqFast.mix.pct);
@@ -5628,7 +5664,7 @@ async function refresh(forceToast=false){
 
     if(state.net){
       state.net.failCount = 0;
-      state.net.nextPollMs = document.hidden ? 30000 : 10000;
+      state.net.nextPollMs = document.hidden ? 30000 : (["overview","mixing"].includes(getActiveView()) ? 5000 : 10000);
     }
     setApiHealth("good", state.ws?.připojeno ? "API: WebSocket" : "API: zařízení");
 
