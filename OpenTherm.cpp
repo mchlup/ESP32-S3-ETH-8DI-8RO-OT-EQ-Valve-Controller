@@ -4,6 +4,7 @@ Copyright 2023, Ihor Melnyk
 */
 
 #include "OpenTherm.h"
+#include "DeviceDiagnostics.h"
 
 extern "C" void openThermBackgroundService(void) __attribute__((weak));
 #if !defined(__AVR__)
@@ -178,6 +179,7 @@ unsigned long OpenTherm::sendRequest(unsigned long request)
             responseStatus = OpenThermResponseStatus::TIMEOUT;
             interrupts();
             setIdleState();
+            DeviceDiagnostics::noteOtHardTimeout((uint8_t)((request >> 16) & 0xffUL), nowMs - startedMs);
             Serial.printf("[OT] HARD TIMEOUT ID=%u, %lu ms\n",
                           (unsigned)((request >> 16) & 0xffUL),
                           (unsigned long)(nowMs - startedMs));
