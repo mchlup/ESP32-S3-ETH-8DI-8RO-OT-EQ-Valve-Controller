@@ -202,8 +202,14 @@
     const trend=card("Trend teploty kotle","Naměřená teplota vůči požadavku OpenTherm.","v5-overview-trend");
     cardBody(trend).innerHTML=trendMarkup();
     section.appendChild(reveal("Graf vývoje topné vody","Naměřená teplota a požadavek kotli, historie posledních 120 vzorků",trend));
-    // Retire the original dashboard instead of nesting the obsolete widgets.
-    // Live valve cards and current metrics are handled above.
+    // The old charts and metrics are no longer visible. Temporarily retain
+    // their existing DOM IDs in a hidden compatibility container until all
+    // legacy handlers are migrated; renderSample still accesses #bMode etc.
+    if(original){
+      const legacy=make("div","v5-legacy-compat");
+      legacy.hidden=true;
+      put(legacy,original);section.appendChild(legacy);
+    }
     // Keep legacy container out of the live view; its unused controls are
     // no longer needed for the new overview.
   }
@@ -358,7 +364,12 @@
       '<div class="v5-tank-stat"><span>ROZDÍL HORNÍ / SPODNÍ TEPLOTY</span><strong id="v5-tank-delta">—</strong><small id="v5-tank-detail">Čekám na údaje čidel.</small>'+
       '<button type="button" class="btn" data-open-view="mixing">Směšovací ventil ↗</button></div></div>';
     section.appendChild(widget);
-    // Old tank gauges have been superseded by the live layered cylinder.
+    // Preserve the original sensor elements off-screen for old refresh
+    // handlers; display only the redesigned vessel above.
+    if(old.length){
+      const compatibility=make("div","v5-legacy-compat");
+      compatibility.hidden=true;put(compatibility,...old);section.appendChild(compatibility);
+    }
   }
 
   function opentherm() {
