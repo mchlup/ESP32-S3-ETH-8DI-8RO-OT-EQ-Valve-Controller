@@ -5,6 +5,7 @@
 #include <esp_idf_version.h>
 #include <string.h>
 #include <math.h>
+#include <stdlib.h>
 
 namespace {
   Preferences g_prefs;
@@ -17,7 +18,17 @@ namespace {
   void notePersistenceFailure(const char* key) {
     ++g_persistenceFailureCount;
     g_lastPersistenceFailureKey = key ? key : "unknown";
-    Serial.printf("[CFG] NVS write/readback failed: %s\n", g_lastPersistenceFailureKey.c_str());
+    nvs_stats_t stats = {};
+    const esp_err_t statsErr = nvs_get_stats("nvs", &stats);
+    if (statsErr == ESP_OK) {
+      Serial.printf("[CFG] NVS write/readback failed: %s; used=%u free=%u total=%u entries\n",
+                    g_lastPersistenceFailureKey.c_str(),
+                    (unsigned)stats.used_entries, (unsigned)stats.free_entries,
+                    (unsigned)stats.total_entries);
+    } else {
+      Serial.printf("[CFG] NVS write/readback failed: %s; stats error=%d\n",
+                    g_lastPersistenceFailureKey.c_str(), (int)statsErr);
+    }
   }
 
   // Defaults
@@ -508,7 +519,35 @@ static constexpr const char* K_EQ_BA_CH = "eq_ba_ch";
     g_eqMixTravelToBMs = g_prefs.getUInt(K_EQ_MIX_TB, g_eqMixTravelMs);
     g_eqMixCalibrationSeatMs = g_prefs.getUInt(K_EQ_MIX_SEAT, g_eqMixCalibrationSeatMs);
     g_eqMixAutoRecalibrationMs = g_prefs.getUInt(K_EQ_MIX_RECAL, g_eqMixAutoRecalibrationMs);
-    g_eqMixAdvancedJson = g_prefs.getString(K_EQ_MIX_ADV, g_eqMixAdvancedJson);
+    // Migration: older firmware saved the mixed configuration as a long STR.
+    // Large strings require contiguous free NVS entries in ONE page. A BLOB
+    // spans multiple pages and remains writable on fragmented NVS partitions.
+    // Reuse the original key; do not allocate a second large NVS value.
+    const PreferenceType advType = g_prefs.getType(K_EQ_MIX_ADV);
+    if (advType == PT_BLOB) {
+      const size_t bytes = g_prefs.getBytesLength(K_EQ_MIX_ADV);
+      // Maximum serialized TECH mixing+weather object (incl. trailing NUL).
+      if (bytes >= 3 && bytes <= 8192) {
+        char* buffer = (char*)malloc(bytes);
+        if (buffer) {
+          const size_t readCount = g_prefs.getBytes(K_EQ_MIX_ADV, buffer, bytes);
+          if (readCount == bytes && buffer[bytes - 1] == '\0' &&
+              strlen(buffer) == bytes - 1) {
+            g_eqMixAdvancedJson = String(buffer);
+          } else {
+            Serial.println("[CFG] Invalid mixer NVS blob; using safe defaults");
+          }
+          free(buffer);
+        } else {
+          Serial.println("[CFG] Insufficient RAM to read mixer NVS blob");
+        }
+      } else {
+        Serial.printf("[CFG] Invalid mixer NVS blob length: %u\n", (unsigned)bytes);
+      }
+    } else if (advType == PT_STR) {
+      // Legacy value stays readable until the first successful BLOB write.
+      g_eqMixAdvancedJson = g_prefs.getString(K_EQ_MIX_ADV, g_eqMixAdvancedJson);
+    }
     g_setupWizardCompletedVersion = g_prefs.getUInt(K_WIZ_VER, g_setupWizardCompletedVersion);
     g_eqMixTempSourceA = normalizeMixTempSourceA(g_prefs.getString(K_EQ_MIX_SRC_A, g_eqMixTempSourceA));
     g_eqMixTempSourceB = normalizeMixTempSourceB(g_prefs.getString(K_EQ_MIX_SRC_B, g_eqMixTempSourceB));
@@ -723,14 +762,19 @@ static constexpr const char* K_EQ_BA_CH = "eq_ba_ch";
   // values while the same namespace is open to catch short/failed writes.
   void saveBytes(const char* key, const void* data, size_t len) {
     if (!beginWriteSession()) { notePersistenceFailure(key); return; }
-    bool ok = g_prefs.putBytes(key, data, len) == len &&
-              g_prefs.getBytesLength(key) == len;
+    const size_t written = g_prefs.putBytes(key, data, len);
+    const size_t readLength = g_prefs.getBytesLength(key);
+    bool ok = written == len && readLength == len;
     if (ok && len <= 256) {
       uint8_t check[256];
       ok = g_prefs.getBytes(key, check, len) == len &&
            memcmp(check, data, len) == 0;
     }
-    if (!ok) notePersistenceFailure(key);
+    if (!ok) {
+      Serial.printf("[CFG] NVS BLOB key=%s requested=%u written=%u storedLength=%u\n",
+                    key, (unsigned)len, (unsigned)written, (unsigned)readLength);
+      notePersistenceFailure(key);
+    }
     endWriteSessionIfNeeded();
   }
 
@@ -1261,8 +1305,30 @@ namespace ConfigStore {
   String getEqMixAdvancedJson() { begin(); return g_eqMixAdvancedJson; }
   void setEqMixAdvancedJson(const String& v) {
     begin();
-    g_eqMixAdvancedJson = v.length() ? v : String("{}");
-    saveString(K_EQ_MIX_ADV, g_eqMixAdvancedJson);
+    const String next = v.length() ? v : String("{}");
+    if (next.length() + 1 > 8192) {
+      Serial.printf("[CFG] Mixer JSON exceeds 8192-byte storage budget (%u)\n",
+                    (unsigned)next.length());
+      notePersistenceFailure(K_EQ_MIX_ADV);
+      return;
+    }
+
+    // NVS strings need contiguous page space; blobs can span pages. Reusing
+    // the same key migrates the old string in-place, without a second copy.
+    // Do not rewrite an unchanged blob (flash wear and extra fragmentation).
+    if (next == g_eqMixAdvancedJson && beginWriteSession()) {
+      const bool alreadyBlob = g_prefs.getType(K_EQ_MIX_ADV) == PT_BLOB;
+      endWriteSessionIfNeeded();
+      if (alreadyBlob) return;
+    }
+
+    const uint32_t failuresBefore = g_persistenceFailureCount;
+    saveBytes(K_EQ_MIX_ADV, next.c_str(), next.length() + 1);
+    // Cache only successfully persisted data. A 500 response must not expose
+    // a newer configuration that disappears after power loss.
+    if (failuresBefore == g_persistenceFailureCount) {
+      g_eqMixAdvancedJson = next;
+    }
   }
   uint32_t getSetupWizardCompletedVersion() { begin(); return g_setupWizardCompletedVersion; }
   void setSetupWizardCompletedVersion(uint32_t v) {
