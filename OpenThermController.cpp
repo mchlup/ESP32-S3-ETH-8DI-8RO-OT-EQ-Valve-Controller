@@ -1,5 +1,6 @@
 #include "Features.h"
 #include "OpenThermController.h"
+#include "DeviceDiagnostics.h"
 
 #if defined(FEATURE_OPENTHERM)
 
@@ -139,9 +140,9 @@ namespace {
   }
 
   static void stNoteResponse(OpenThermResponseStatus rs) {
-    if (rs == OpenThermResponseStatus::SUCCESS) g_st.okCount++;
-    else if (rs == OpenThermResponseStatus::TIMEOUT) g_st.timeoutCount++;
-    else if (rs == OpenThermResponseStatus::INVALID) g_st.invalidCount++;
+    if (rs == OpenThermResponseStatus::SUCCESS) { g_st.okCount++; DeviceDiagnostics::noteOtResponse(0); }
+    else if (rs == OpenThermResponseStatus::TIMEOUT) { g_st.timeoutCount++; DeviceDiagnostics::noteOtResponse(1); }
+    else if (rs == OpenThermResponseStatus::INVALID) { g_st.invalidCount++; DeviceDiagnostics::noteOtResponse(2); }
   }
 
   static bool sameFloat(float a, float b, float eps = 0.01f) {
