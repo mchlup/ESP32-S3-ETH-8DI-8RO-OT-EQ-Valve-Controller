@@ -35,6 +35,7 @@
 #include "PressureAlarmController.h"
 #include "BuzzerController.h"
 #include "EventLog.h"
+#include "DeviceDiagnostics.h"
 #include "HistoryBuffer.h"
 #include "ConfigRuntime.h"
 #include "config_pins.h"
@@ -784,10 +785,12 @@ namespace {
   static void handleWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t length) {
     if (type == WStype_CONNECTED) {
       if (g_wsClientCount < 255) ++g_wsClientCount;
+      DeviceDiagnostics::noteWebSocketClients(g_wsClientCount);
       const String msg = buildFastWsFrame(true);
       if (msg.length()) g_ws.sendTXT(num, msg.c_str(), msg.length());
     } else if (type == WStype_DISCONNECTED) {
       if (g_wsClientCount > 0) --g_wsClientCount;
+      DeviceDiagnostics::noteWebSocketClients(g_wsClientCount);
     } else if (type == WStype_TEXT && payload && length) {
       const String command(reinterpret_cast<const char*>(payload), length);
       const bool wantsSync = command == "sync"
@@ -2801,6 +2804,51 @@ namespace {
     }
   }
 
+  static void handleDiagnosticsStatus() {
+    DynamicJsonDocument doc(3072);
+    doc["ok"] = true;
+    JsonObject health = doc.createNestedObject("health");
+    DeviceDiagnostics::fillStatus(health);
+    sendJsonDoc(200, doc);
+  }
+
+  static void handleDiagnosticsTail() {
+    // Text-only bounded preview, keep JSON construction and HTTP latency low.
+    const String tail = DeviceDiagnostics::readTail(8192);
+    g_srv.sendHeader("Cache-Control", "no-store");
+    g_srv.send(200, "text/plain; charset=utf-8", tail);
+  }
+
+  static void handleDiagnosticsDownload() {
+    const int n = g_srv.hasArg("part") ? g_srv.arg("part").toInt() : 0;
+    if (n < 0 || n > 3 || !g_fsMounted) {
+      writeUploadJson(404, false, "log_not_available");
+      return;
+    }
+    DeviceDiagnostics::flushNow();
+    const char* path = DeviceDiagnostics::logPath((uint8_t)n);
+    if (!path || !LittleFS.exists(path)) {
+      writeUploadJson(404, false, "log_not_found");
+      return;
+    }
+    File file = LittleFS.open(path, "r");
+    if (!file) { writeUploadJson(500, false, "open_failed"); return; }
+    g_srv.sendHeader("Cache-Control", "no-store");
+    g_srv.sendHeader("Content-Disposition", String("attachment; filename=therma-diagnostics-") + String(n) + ".jsonl");
+    g_srv.streamFile(file, "application/x-ndjson");
+    file.close();
+  }
+
+  static void handleDiagnosticsClear() {
+    if (rejectActionRateLimit("diag_clear", 5000UL, 2, 60000UL, "diagnostics_clear_guard")) return;
+    const bool ok = DeviceDiagnostics::clearFiles();
+    // Log the explicit destructive action *after* clearing the journal.
+    recordAdminAction("diag_clear", ok, ok ? "journal_cleared" : "clear_failed");
+    DynamicJsonDocument doc(160);
+    doc["ok"] = ok;
+    sendJsonDoc(ok ? 200 : 500, doc);
+  }
+
   static void handleNotFound() {
     if (g_srv.method() == HTTP_GET) {
       if (tryServeFsFile(g_srv.uri())) return;
@@ -2819,9 +2867,11 @@ void webPortalInit() {
 
   g_fsMounted = LittleFS.begin(false);
   if (!g_fsMounted) {
-    Serial.println("[WEB] LittleFS mount failed, trying recovery format");
-    g_fsMounted = LittleFS.begin(true);
+    // Never silently format the filesystem: it contains the diagnostic
+    // evidence, configuration snapshots and the whole web UI.
+    Serial.println("[WEB] LittleFS mount failed; recovery requires explicit service action");
   }
+  DeviceDiagnostics::setStorageAvailable(g_fsMounted);
 
   // NVS is authoritative after first provisioning; LittleFS JSON is a backup.
   ConfigRuntime::loadAllFromStore();
@@ -2840,6 +2890,10 @@ void webPortalInit() {
   g_srv.on("/app.css", HTTP_GET, handleCss);
   g_srv.on("/app.js", HTTP_GET, handleJs);
 
+  g_srv.on("/api/diagnostics/status", HTTP_GET, handleDiagnosticsStatus);
+  g_srv.on("/api/diagnostics/tail", HTTP_GET, handleDiagnosticsTail);
+  g_srv.on("/api/diagnostics/download", HTTP_GET, handleDiagnosticsDownload);
+  g_srv.on("/api/diagnostics/clear", HTTP_POST, handleDiagnosticsClear);
   g_srv.on("/api/fast", HTTP_GET, handleFast);
   g_srv.on("/api/bootstrap", HTTP_GET, handleBootstrap);
   g_srv.on("/api/setup/wizard", HTTP_GET, handleSetupWizardGet);
