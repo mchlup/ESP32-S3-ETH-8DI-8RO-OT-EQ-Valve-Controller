@@ -1956,6 +1956,23 @@ namespace {
     if (o.containsKey("bootDelayMs")) ConfigStore::setOtBootDelayMs((uint32_t)(o["bootDelayMs"] | 15000));
     if (o.containsKey("mode")) ConfigStore::setOtMode(String((const char*)o["mode"]));
     if (o.containsKey("allowRawWrite")) ConfigStore::setOtAllowRawWrite((bool)(o["allowRawWrite"] | false));
+    // Preserve documented advanced OT options across a full power cycle.
+    DynamicJsonDocument existing(2048);
+    deserializeJson(existing, ConfigStore::getOtAdvancedJson());
+    if (!existing.is<JsonObject>()) existing.to<JsonObject>();
+    JsonObject extras = existing.as<JsonObject>();
+    const char* keys[] = {"watchdogTimeoutMs", "maxConsecutiveFailures",
+      "mapEquithermChSetpoint", "mapDhw", "mapNightMode",
+      "minChSetpointC", "maxChSetpointC", "dhwSetpointC",
+      "dhwBoostChSetpointC", "assumedMaxBoilerKw"};
+    bool changed = false;
+    for (const char* key : keys) {
+      if (o.containsKey(key)) { extras[key] = o[key]; changed = true; }
+    }
+    if (changed) {
+      String serialized; serializeJson(extras, serialized);
+      ConfigStore::setOtAdvancedJson(serialized);
+    }
   }
 
   static void applyBleSection(JsonObjectConst b) {
