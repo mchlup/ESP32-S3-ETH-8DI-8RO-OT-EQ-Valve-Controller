@@ -267,3 +267,14 @@
   .therma-v5 .v5-overview-mixing-stage .mix-manual-row{gap:5px}
   .therma-v5 .v5-overview-mixing-stage .mix-manual-row .btn{min-width:0}
 }
+
+/* Persistent diagnostics logbook */
+.therma-v5 .v5-diagnostics-journal .v5-card-body{display:grid;gap:12px}
+.therma-v5 .v5-journal-actions,.therma-v5 .v5-journal-archives{display:flex;flex-wrap:wrap;gap:8px}
+.therma-v5 .v5-journal-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
+.therma-v5 .v5-journal-metrics>div{background:var(--bg2);border:1px solid var(--border);border-radius:9px;padding:11px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.therma-v5 .v5-journal-metrics span{font-size:10px;color:var(--fg2)}
+.therma-v5 .v5-journal-metrics strong{font-size:13px;overflow-wrap:anywhere}
+.therma-v5 .v5-journal-tail{min-height:170px;max-height:390px;overflow:auto;overflow-wrap:anywhere;white-space:pre-wrap;font:11px/1.6 var(--mono);padding:12px;border:1px solid var(--border);border-radius:11px;background:var(--bg2)}
+@media(max-width:850px){.therma-v5 .v5-journal-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.therma-v5 .v5-journal-metrics{grid-template-columns:1fr}}
