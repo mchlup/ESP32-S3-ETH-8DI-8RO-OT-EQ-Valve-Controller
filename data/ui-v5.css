@@ -338,3 +338,8 @@
   .therma-v5 .v5-mix-aku-card .v5-mix-aku-layers{display:flex;flex-direction:column;min-height:270px;width:min(100%,260px)}
   .therma-v5 .v5-mix-aku-layer{min-height:76px}
 }
+
+/* Keep the safety stop accessible after rebuilding the modern I/O view. */
+.therma-v5 .v5-io-safety-actions{display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-bottom:12px}
+.therma-v5 .v5-io-safety-actions .btn{min-height:43px}
+@media(max-width:560px){.therma-v5 .v5-io-safety-actions{justify-content:stretch}.therma-v5 .v5-io-safety-actions .btn{width:100%}}
