@@ -8,20 +8,29 @@ Firmware pro **Waveshare ESP32-S3-ETH-8DI-8RO**, určený k řízení topného s
 
 > **Stav ověření:** README popisuje připravený zdrojový kód na této větvi. Změny MQTT a alarmového buzzeru vyžadují kompilaci a hardwarové ověření. Výrobní nasazení do topné soustavy provádějte až po kontrole bezpečných stavů relé, správných směrů ventilu a vypínání při poruchách.
 
-## Náhledy webového UI
+## Náhledy aktuálního webového UI THERMA
 
-Skutečné obrázky uložené v repozitáři (nejde o nově generované ilustrace):
+Ukázky níže vycházejí z **aktuální struktury webového rozhraní v5.4**, nikoliv ze starého designu `web-winter-*.webp`. Jsou to **ilustrační náhledy připravené podle HTML/CSS/JS projektu**, s demonstračními teplotami a stavy. Nejde o skutečné screenshoty živého zařízení ESP32.
 
-### Přehled
-![THERMA – Přehled](docs/screenshots/web-winter-overview.webp)
+### Přehled – provozní panel
 
-### Směšovací ventil
-![THERMA – Směšovací ventil](docs/screenshots/web-winter-mixing.webp)
+Stav vytápění, venkovní teplota, kotel, TUV a **trojice provozních karet směšovače**: aktuální stav regulace, schéma ručního ovládání a teplotní vrstvy AKU.
 
-### Konfigurace ekvitermní křivky
-![THERMA – nastavení křivek](docs/screenshots/web-winter-tech-i3-settings.webp)
+![THERMA v5.4 – nový Přehled, ilustrační data](docs/screenshots/therma-v5-overview.svg)
 
-> Snímky zachycují dříve uložené verze UI. V aktuální verzi mohou být některé prvky a uspořádání odlišné.
+### Směšovací ventil – provoz
+
+Aktuální poloha a teploty ventilových portů A/B/AB, doba do dalšího regulačního rozhodnutí, ruční impulzy a teplotní nádrž. Konfigurace regulace a kalibrace jsou v samostatných záložkách.
+
+![THERMA v5.4 – provoz směšovacího ventilu, ilustrační data](docs/screenshots/therma-v5-mixing.svg)
+
+### Topení – ekvitermní křivky
+
+Editor **2bodové a 4bodové ekvitermní křivky** (komfort/útlum), limity topné vody a graf s náhledem obou křivek. Náhled reaguje na změny formuláře; nové nastavení se použije až po uložení.
+
+![THERMA v5.4 – editor 4bodové křivky, ilustrační data](docs/screenshots/therma-v5-equitherm.svg)
+
+> **Poznámka:** Pro autentické screenshoty se skutečnými naměřenými hodnotami je potřeba otevřít webové UI běžícího zařízení ESP32 a zachytit příslušné stránky. Staré snímky `web-winter-*.webp` zůstávají v repozitáři pouze pro historickou referenci.
 
 ## Funkce
 
