@@ -752,11 +752,23 @@ static constexpr const char* K_EQ_BA_CH = "eq_ba_ch";
 
   void saveString(const char* key, const String& v) {
     if (!beginWriteSession()) { notePersistenceFailure(key); return; }
-    // Saving identical large JSON documents repeatedly wastes flash writes.
-    const bool same = g_prefs.isKey(key) && g_prefs.getString(key, "") == v;
-    const bool ok = same ||
-      (g_prefs.putString(key, v) == v.length() + 1 &&
-       g_prefs.isKey(key) && g_prefs.getString(key, "") == v);
+    // Arduino-ESP32 Preferences::putString() returns strlen(value), NOT
+    // strlen(value) + 1 (the latter is getStringLength()'s convention).
+    // The incorrect +1 check reported a false NVS failure after every
+    // successful write, most visibly for eq_mx_adv / mixing config.
+    const bool same = g_prefs.isKey(key) &&
+                      g_prefs.getStringLength(key) == v.length() + 1 &&
+                      g_prefs.getString(key, String()) == v;
+    bool ok = same;
+    if (!ok) {
+      const size_t written = g_prefs.putString(key, v);
+      // Empty strings legitimately return 0 even when successfully stored;
+      // a complete NVS readback distinguishes them from write failures.
+      const bool sizeOk = written == v.length();
+      ok = sizeOk && g_prefs.isKey(key) &&
+           g_prefs.getStringLength(key) == v.length() + 1 &&
+           g_prefs.getString(key, String()) == v;
+    }
     if (!ok) notePersistenceFailure(key);
     endWriteSessionIfNeeded();
   }
