@@ -208,3 +208,24 @@
 @media(max-width:1000px){.therma-v5 .v5-overview-status{grid-template-columns:repeat(2,minmax(0,1fr))}.therma-v5 .v5-overview-primary{grid-template-columns:1fr}.therma-v5 .v5-overview-metrics .v5-metric-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:620px){.therma-v5 .v5-overview-metrics .v5-metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.therma-v5 .v5-overview-status{grid-template-columns:repeat(2,minmax(0,1fr))}.therma-v5 .v5-overview-status>div{display:grid;gap:4px}.therma-v5 .v5-overview-status strong{text-align:left}.therma-v5 .v5-mixer-inlets,.therma-v5 .v5-mixer-out{grid-template-columns:1fr}.therma-v5 .v5-mixer-join{height:27px}.therma-v5 .v5-circ-facts{grid-template-columns:1fr 1fr}.therma-v5 .v5-circ-pump-icon{width:46px;height:46px;flex-basis:46px}.therma-v5 .v5-circ-copy strong{font-size:14px}.therma-v5 .v5-circ-settings{grid-template-columns:1fr}.therma-v5 .v5-curve-preview-head{flex-wrap:wrap}}
 @media(prefers-reduced-motion:reduce){.therma-v5 .v5-circ-current[data-running="yes"] .v5-circ-pump-icon span{animation:none}}
+
+
+/* Live AKU profile next to valve state and manual controls */
+.therma-v5 .v5-mixing-stage{grid-template-columns:repeat(3,minmax(0,1fr));align-items:stretch}
+.therma-v5 .v5-mix-aku-card{min-width:0;display:flex;flex-direction:column}
+.therma-v5 .v5-mix-aku-card .v5-card-body{flex:1;padding:12px;display:flex;flex-direction:column;gap:12px}
+.therma-v5 .v5-mix-aku-layers{display:grid;gap:5px;padding:8px;border:1px solid var(--border);border-radius:42px;background:var(--bg2)}
+.therma-v5 .v5-mix-aku-layer{display:flex;justify-content:space-between;align-items:center;gap:8px;min-height:92px;padding:15px 18px;border-radius:9px}
+.therma-v5 .v5-mix-aku-layer.top{background:linear-gradient(90deg,#f3b776,#fae1c6);color:#693c21}
+.therma-v5 .v5-mix-aku-layer.mid{background:linear-gradient(90deg,#e9d8b3,#f7ecda);color:#58452e}
+.therma-v5 .v5-mix-aku-layer.bot{background:linear-gradient(90deg,#a1cae7,#d7ecf8);color:#214a67}
+.therma-v5 .v5-mix-aku-layer span{font-size:11px;font-weight:800;letter-spacing:.07em}
+.therma-v5 .v5-mix-aku-layer strong{font-size:clamp(19px,2vw,28px);white-space:nowrap}
+.therma-v5 .v5-mix-aku-metrics{display:grid;gap:7px}
+.therma-v5 .v5-mix-aku-metrics>div{display:grid;grid-template-columns:1fr auto;align-items:center;gap:8px;border:1px solid var(--border);background:var(--bg2);padding:10px;border-radius:10px}
+.therma-v5 .v5-mix-aku-metrics span{font-size:11px;color:var(--fg2)}
+.therma-v5 .v5-mix-aku-metrics strong{font-size:13px;white-space:nowrap}
+.therma-v5 .v5-mix-aku-note{font-size:11px;line-height:1.5;color:var(--fg2)}
+@media(max-width:1450px){.therma-v5 .v5-mixing-stage{grid-template-columns:repeat(2,minmax(0,1fr))}.therma-v5 .v5-mix-aku-card{grid-column:1/-1}.therma-v5 .v5-mix-aku-layers{grid-template-columns:repeat(3,minmax(0,1fr));border-radius:12px}.therma-v5 .v5-mix-aku-layer{flex-direction:column;text-align:center}}
+@media(max-width:850px){.therma-v5 .v5-mixing-stage{grid-template-columns:1fr}.therma-v5 .v5-mix-aku-card{grid-column:auto}}
+@media(max-width:560px){.therma-v5 .v5-mix-aku-layers{grid-template-columns:1fr}.therma-v5 .v5-mix-aku-layer{flex-direction:row;min-height:62px}}
