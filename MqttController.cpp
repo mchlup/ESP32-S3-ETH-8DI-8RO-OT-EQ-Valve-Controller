@@ -663,11 +663,11 @@ namespace {
           s_st.subscribed = false;
           s_st.lastError = 0;
           s_st.lastErrorText = "";
-          publishAvailability("online");
-          mqttSubscribeCommands();
-          publishInfo();
-          publishState(true);
-          publishDiscovery();
+          // Defer state, discovery and command subscription from the MQTT
+          // event task to the Arduino main loop. Discovery publishes many
+          // retained messages and must not block the transport callback.
+          s_st.lastPublishMs = 0;
+          s_st.lastDiscoveryMs = 0;
           break;
         case MQTT_EVENT_DISCONNECTED:
           s_st.connected = false;
@@ -731,6 +731,11 @@ void mqttLoop() {
   if (s_st.connected) {
     mqttSubscribeCommands();
     const uint32_t now = millis();
+    if (!s_st.discoveryPublished && s_st.lastDiscoveryMs == 0) {
+      publishAvailability("online");
+      publishInfo();
+      publishState(true);
+    }
     if (!s_st.discoveryPublished &&
         (s_st.lastDiscoveryMs == 0 || (uint32_t)(now - s_st.lastDiscoveryMs) >= kDiscoveryRetryMs)) {
       publishDiscovery();
