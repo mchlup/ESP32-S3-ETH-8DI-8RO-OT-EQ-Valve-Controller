@@ -222,7 +222,7 @@
         try{ body = JSON.parse(txt); }catch{}
       }
       if(!r.ok){
-        const msg = body?.msg || body?.error || body?.message || txt || `HTTP ${r.status} for ${path}`;
+        const msg = body?.msg || body?.err || body?.error || body?.message || txt || `HTTP ${r.status} for ${path}`;
         const retryAfterMs = Number(body?.retryAfterMs);
         if(r.status === 429){
           const extra = Number.isFinite(retryAfterMs) && retryAfterMs > 0 ? ` Zkus to znovu za ${Math.ceil(retryAfterMs/1000)} s.` : " Zkus to znovu za chvíli.";
@@ -278,6 +278,11 @@
       setBusy(btn, true, busyText);
       try{
         return await task();
+      }catch(e){
+        const message = String(e?.message || e || "Neznámá chyba");
+        log("UI action error: " + message);
+        toast("Akce se nezdařila", message, "⚠");
+        return null;
       }finally{
         setBusy(btn, false);
       }
