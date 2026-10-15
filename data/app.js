@@ -3892,22 +3892,23 @@ async function otRwWrite(){
     }
 
     function getEqChartConfig(){
-      // The heating editor is authoritative for its own immediate preview.
-      // Reading values from the mixing-valve form here previously made the
-      // visible comfort/night curve ignore the slope and offset being edited.
-      if(getActiveView() === "heating" && document.getElementById("hDaySlope")){
-        const number = (id, fallback) => {
-          const n = Number.parseFloat(document.getElementById(id)?.value ?? "");
-          return Number.isFinite(n) ? n : fallback;
-        };
-        const minFlowC=number("hMin",22),maxFlowC=number("hMax",60);
-        return {
-          curveMode:"linear2",
-          dayCurve:{slope:number("hDaySlope",1),shift:number("hDayShift",0)},
-          nightCurve:{slope:number("hNightSlope",.7),shift:number("hNightShift",-5)},
-          minFlowC:Math.min(minFlowC,maxFlowC),
-          maxFlowC:Math.max(minFlowC,maxFlowC)
-        };
+      // Preview the curve editor belonging to the active page. Both pages
+      // use the same firmware curveMode, including TECH i-3 four-point data.
+      if(getActiveView() === "heating" && document.getElementById("hCurveMode")){
+        const n=(id,fallback)=>{const v=Number.parseFloat(document.getElementById(id)?.value ?? "");return Number.isFinite(v)?v:fallback;};
+        const min=n("hMin",22),max=n("hMax",60);
+        const mode=String(document.getElementById("hCurveMode")?.value || "linear2");
+        const source={curveMode:mode,limits:{minFlowC:Math.min(min,max),maxFlowC:Math.max(min,max)}};
+        if(mode === "tech_i3_4point"){
+          source.weather4={
+            day:["M20","M10","0","P10"].map((v,i)=>n("hHeatDay"+v,[45,40,35,30][i])),
+            night:["M20","M10","0","P10"].map((v,i)=>n("hHeatNight"+v,[42,37,32,27][i]))
+          };
+        }else{
+          source.dayCurve={slope:n("hDaySlope",1),shift:n("hDayShift",0)};
+          source.nightCurve={slope:n("hNightSlope",.7),shift:n("hNightShift",-5)};
+        }
+        return buildEqChartConfigFromSource(source,state.dev?.eqCfg) || state.dev?.eqCfg;
       }
       const defaults = {
         curveMode: "linear2",
@@ -3936,6 +3937,7 @@ async function otRwWrite(){
 
     function eqConfigInputIds(){
       return [
+        "hCurveMode","hHeatDayM20","hHeatDayM10","hHeatDay0","hHeatDayP10","hHeatNightM20","hHeatNightM10","hHeatNight0","hHeatNightP10",
         "hDaySlope","hDayShift","hNightSlope","hNightShift","hMin","hMax",
         "hWrite57","hBoilerMax","hEqModeCfg","hUseIn1NightOverride",
         "hSummerModeEnabled","hSummerOffAboveC","hSummerOnBelowC","hDriveNightRelay","hNightRelay",
@@ -3995,6 +3997,15 @@ async function otRwWrite(){
       setInputNumber("hDayShift", dayCurve.shift, 1);
       setInputNumber("hNightSlope", nightCurve.slope, 2);
       setInputNumber("hNightShift", nightCurve.shift, 1);
+      const curveMode=String(cfg.curveMode || "linear2");
+      const editor=document.getElementById("hCurveMode");if(editor) editor.value=curveMode;
+      const day4=Array.isArray(cfg.weather4?.day)?cfg.weather4.day:[45,40,35,30];
+      const night4=Array.isArray(cfg.weather4?.night)?cfg.weather4.night:[42,37,32,27];
+      ["M20","M10","0","P10"].forEach((suffix,i)=>{
+        setInputNumber("hHeatDay"+suffix,day4[i],1);
+        setInputNumber("hHeatNight"+suffix,night4[i],1);
+      });
+      syncHeatingCurveUi();
 
       // limits (flow temp clamp)
       const displayLimits = normalizeHeatingFlowLimits(limits);
@@ -4050,6 +4061,14 @@ async function otRwWrite(){
       }
       redrawEquithermViews();
       renderHeatingOtInfo();
+    }
+
+    function syncHeatingCurveUi(){
+      const mode=String(document.getElementById("hCurveMode")?.value || "linear2");
+      const two=document.getElementById("hHeatCurve2Block");
+      const four=document.getElementById("hHeatCurve4Block");
+      if(two)two.hidden=mode==="tech_i3_4point";
+      if(four)four.hidden=mode!=="tech_i3_4point";
     }
 
     function syncMixCurveUi(){
@@ -4111,6 +4130,7 @@ async function otRwWrite(){
        ["hMixNightM20",night4[0]],["hMixNightM10",night4[1]],["hMixNight0",night4[2]],["hMixNightP10",night4[3]]]
         .forEach(([id,v])=>setInputNumber(id,v,1));
       syncMixCurveUi();
+      redrawEquithermViews();
       updateMixDirectionUi();
       if(cfg.runtime && !state.mixStatus) applyMixingStatus(cfg.runtime);
       renderMixBadge();
@@ -5043,6 +5063,14 @@ async function serviceIoCall(payload){
           fitY: true,
         });
       }
+      if(mixingVisible && $("#eqChartMixing")?.getBoundingClientRect().width > 24){
+        drawEquithermChart($("#eqChartMixing"), {
+          dayCurve, nightCurve, minFlowC, maxFlowC,
+          pointX, pointY, outdoorNow: sample.out, fitY: true,
+        });
+        setText("#mixCurvePreviewMode",
+          String(document.getElementById("hMixCurveMode")?.value)==="tech_i3_4point"?"4-bodová":"2-bodová");
+      }
       if(heatingVisible && $("#eqChartHeating")?.getBoundingClientRect().width > 24){
         drawEquithermChart($("#eqChartHeating"), {
           dayCurve, nightCurve, minFlowC, maxFlowC,
@@ -5701,6 +5729,7 @@ async function refresh(forceToast=false){
       $$('[data-open-view]').forEach(b => b.addEventListener("click", () => setView(b.dataset.openView)));
       document.getElementById("hMixOpeningDirection")?.addEventListener("change", syncMixUiVisibility);
       document.getElementById("hMixCurveMode")?.addEventListener("change", syncMixCurveUi);
+      document.getElementById("hCurveMode")?.addEventListener("change", syncHeatingCurveUi);
       document.getElementById("btnSetupWizard")?.addEventListener("click", () => setupWizardOpen({auto:false}));
       document.getElementById("setupWizardClose")?.addEventListener("click", () => setupWizardClose(true));
       document.getElementById("setupWizardLater")?.addEventListener("click", () => setupWizardClose(true));
@@ -5873,7 +5902,7 @@ async function refresh(forceToast=false){
 
 
       // live update equitherm chart when heating inputs change
-      ["hDaySlope","hDayShift","hNightSlope","hNightShift","hMin","hMax","hBoilerMax","hTarget","eqSet","hMixCurveMode","hMixDay2OutCold","hMixDay2FlowCold","hMixDay2OutWarm","hMixDay2FlowWarm","hMixNight2OutCold","hMixNight2FlowCold","hMixNight2OutWarm","hMixNight2FlowWarm","hMixDayM20","hMixDayM10","hMixDay0","hMixDayP10","hMixNightM20","hMixNightM10","hMixNight0","hMixNightP10","hMixCurveMinFlow","hMixCurveMaxFlow","hEqModeCfg","hUseIn1NightOverride","hSummerModeEnabled","hSummerOffAboveC","hSummerOnBelowC","hDriveNightRelay","hNightRelay","hNightRelayOnWhenNight","hBoilerAssistEnabled","hBoilerAssistDeltaC","hBoilerAssistForceChEnable"].forEach(id => {
+      ["hCurveMode","hHeatDayM20","hHeatDayM10","hHeatDay0","hHeatDayP10","hHeatNightM20","hHeatNightM10","hHeatNight0","hHeatNightP10","hDaySlope","hDayShift","hNightSlope","hNightShift","hMin","hMax","hBoilerMax","hTarget","eqSet","hMixCurveMode","hMixDay2OutCold","hMixDay2FlowCold","hMixDay2OutWarm","hMixDay2FlowWarm","hMixNight2OutCold","hMixNight2FlowCold","hMixNight2OutWarm","hMixNight2FlowWarm","hMixDayM20","hMixDayM10","hMixDay0","hMixDayP10","hMixNightM20","hMixNightM10","hMixNight0","hMixNightP10","hMixCurveMinFlow","hMixCurveMaxFlow","hEqModeCfg","hUseIn1NightOverride","hSummerModeEnabled","hSummerOffAboveC","hSummerOnBelowC","hDriveNightRelay","hNightRelay","hNightRelayOnWhenNight","hBoilerAssistEnabled","hBoilerAssistDeltaC","hBoilerAssistForceChEnable"].forEach(id => {
         const el = document.getElementById(id);
         if(!el) return;
         el.addEventListener("input", redrawEquithermViewsDebounced);
@@ -6076,7 +6105,19 @@ updatePlannerStateBadges();
           const mode = String($("#hEqModeCfg")?.value || $("#eqMode")?.value || "auto");
           if(document.getElementById("eqMode")) document.getElementById("eqMode").value = mode;
 
+          const selectedCurveMode=String($("#hCurveMode")?.value || "linear2");
+          const fourPointValues=(prefix)=>["M20","M10","0","P10"].map(suffix=>{
+            const input=document.getElementById(prefix+suffix);
+            const value=Number.parseFloat(input?.value ?? "");
+            if(!Number.isFinite(value) || value<10 || value>90) throw new Error("Body 4-bodové křivky musejí být v rozsahu 10–90 °C.");
+            return value;
+          });
+          const weather4=selectedCurveMode==="tech_i3_4point"
+            ? {day:fourPointValues("hHeatDay"),night:fourPointValues("hHeatNight")}
+            : undefined;
           await api.postConfigSection("equitherm", {
+            curveMode:selectedCurveMode,
+            ...(weather4?{weather4}:{}),
             enabled: !!document.getElementById("hEqEnabled")?.checked,
             mode,
             useIn1NightOverride: !!$("#hUseIn1NightOverride")?.checked,
@@ -6127,7 +6168,10 @@ updatePlannerStateBadges();
           state.dev.mixCfgLoaded = false;
           if(state.net) state.net.extrasDueMs = 0;
           await loadMixingConfigFromDevice();
+          const updatedEq=await api.fetchConfigSection("equitherm");
+          if(updatedEq){ applyEqConfigToForm(updatedEq,{force:true}); setEqConfigDirty(false); }
           await refresh(false);
+          redrawEquithermViews();
           toast("Směšovací ventil", "Nová konfigurace byla uložena.", "✅");
         }));
       }
