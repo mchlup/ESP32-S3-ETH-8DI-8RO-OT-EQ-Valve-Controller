@@ -1409,6 +1409,7 @@ namespace {
     }
 
     bool applied = false;
+    const uint32_t writeErrorsBefore = ConfigStore::persistenceFailureCount();
     if (root["equitherm"].is<JsonObjectConst>()) {
       String eqJson; serializeJson(root["equitherm"], eqJson);
       equithermApplyConfig(eqJson); applied = true;
@@ -1443,6 +1444,10 @@ namespace {
 
     const bool complete = (bool)(root["complete"] | true);
     if (complete) ConfigStore::setSetupWizardCompletedVersion(kSetupWizardSchemaVersion);
+    if (ConfigStore::persistenceFailureCount() != writeErrorsBefore) {
+      writeUploadJson(500, false, String("nvs_write_failed:") + ConfigStore::lastPersistenceFailureKey());
+      return;
+    }
     const bool snapshotOk = saveConfigSnapshot();
     DynamicJsonDocument out(512);
     out["ok"] = true; out["completed"] = complete; out["snapshotSaved"] = snapshotOk;
@@ -1560,10 +1565,10 @@ namespace {
   }
 
   static bool saveConfigSnapshot() {
-    if (!g_fsMounted) return false;
-    ensureConfigDir();
+    if (!g_fsMounted || !ensureConfigDir()) return false;
     DynamicJsonDocument doc(49152);
     fillConfigDoc(doc);
+    if (doc.overflowed()) return false;
     bool ok = writeJsonVariantToFile("/config.json", doc.as<JsonVariantConst>());
     for (const auto& def : kConfigSections) {
       const String path = String("/config/") + def.name + ".json";
@@ -1648,7 +1653,17 @@ namespace {
     size_t applied = 0;
     auto applyIfPresent = [&](const char* key) {
       if (!root.containsKey(key) || !root[key].is<JsonObjectConst>()) return;
-      applySectionByName(String(key), root[key].as<JsonObjectConst>());
+      // Check the mixing controller's rejection instead of silently counting
+      // the section as successful. Remaining sections are left untouched.
+      if (strcmp(key, "mixing") == 0) {
+        String error;
+        if (!applyMixingSection(root[key].as<JsonObjectConst>(), &error)) {
+          Serial.printf("[CFG] import mixing rejected: %s\n", error.c_str());
+          return;
+        }
+      } else {
+        applySectionByName(String(key), root[key].as<JsonObjectConst>());
+      }
       applied++;
     };
 
@@ -1681,19 +1696,13 @@ namespace {
       bootPrefs.end();
       if (provisioned) return 0;
     }
-    // Existing deployed units may already have NVS settings without the
-    // new provisioning marker. Never overwrite those with a stale export.
-    Preferences cfgPrefs;
-    if (cfgPrefs.begin("cfg", true)) {
-      const bool populated = cfgPrefs.isKey("ot_en") || cfgPrefs.isKey("eq_en") ||
-                             cfgPrefs.isKey("dhw_en") || cfgPrefs.isKey("t_tz");
-      cfgPrefs.end();
-      if (populated) {
-        Preferences p;
-        if (p.begin("bootcfg", false)) { p.putBool("nvs_ready", true); p.end(); }
-        Serial.println("[WEB] Existing NVS config preserved; skipping LittleFS boot import");
-        return 0;
-      }
+    // Detect *any* persisted cfg key, including valve-only installations.
+    // A stale LittleFS export must never overwrite previously provisioned NVS.
+    if (ConfigStore::hasPersistedConfiguration()) {
+      Preferences p;
+      if (p.begin("bootcfg", false)) { p.putBool("nvs_ready", true); p.end(); }
+      Serial.println("[WEB] Existing NVS configuration preserved; skipping LittleFS import");
+      return 0;
     }
 
     size_t applied = 0;
@@ -1749,6 +1758,7 @@ namespace {
     if (deserializeJson(docIn, g_srv.arg("plain"))) { writeUploadJson(400, false, "bad_json"); return; }
     JsonObject root = docIn.as<JsonObject>();
     if (root.isNull()) { writeUploadJson(400, false, "bad_body"); return; }
+    const uint32_t writeErrorsBefore = ConfigStore::persistenceFailureCount();
     if (String(def->name) == "mixing") {
       String mixError;
       if (!applyMixingSection(root, &mixError)) {
@@ -1758,6 +1768,11 @@ namespace {
       }
     } else {
       applySectionByName(String(def->name), root);
+    }
+    if (ConfigStore::persistenceFailureCount() != writeErrorsBefore) {
+      writeUploadJson(500, false, String("nvs_write_failed:") + ConfigStore::lastPersistenceFailureKey());
+      recordAdminAction(def->rateKey, false, "nvs_write_failed");
+      return;
     }
     const bool snapshotOk = saveConfigSnapshot();
     DynamicJsonDocument doc(192);
@@ -1784,7 +1799,12 @@ namespace {
     if (deserializeJson(docIn, g_srv.arg("plain"))) { writeUploadJson(400, false, "bad_json"); return; }
     JsonObject root = docIn.as<JsonObject>();
     if (root.isNull()) { writeUploadJson(400, false, "bad_body"); return; }
+    const uint32_t writeErrorsBefore = ConfigStore::persistenceFailureCount();
     const size_t applied = applyImportedRootConfig(root);
+    if (ConfigStore::persistenceFailureCount() != writeErrorsBefore) {
+      writeUploadJson(500, false, String("nvs_write_failed:") + ConfigStore::lastPersistenceFailureKey());
+      return;
+    }
     if (!applied) { writeUploadJson(400, false, "no_known_sections"); return; }
     const bool snapshotOk = saveConfigSnapshot();
     DynamicJsonDocument doc(256);
@@ -1802,7 +1822,12 @@ namespace {
     if (deserializeJson(docIn, g_srv.arg("plain"))) { writeUploadJson(400, false, "bad_json"); return; }
     JsonObject root = docIn.as<JsonObject>();
     if (root.isNull()) { writeUploadJson(400, false, "bad_body"); return; }
+    const uint32_t writeErrorsBefore = ConfigStore::persistenceFailureCount();
     const size_t applied = applyImportedRootConfig(root);
+    if (ConfigStore::persistenceFailureCount() != writeErrorsBefore) {
+      writeUploadJson(500, false, String("nvs_write_failed:") + ConfigStore::lastPersistenceFailureKey());
+      return;
+    }
     if (!applied) { writeUploadJson(400, false, "no_known_sections"); return; }
     const bool snapshotOk = saveConfigSnapshot();
     DynamicJsonDocument doc(256);
@@ -1874,7 +1899,7 @@ namespace {
     const size_t written = serializeJsonPretty(value, f);
     f.flush();
     f.close();
-    if (written == 0) {
+    if (written == 0 || written != measureJsonPretty(value)) {
       LittleFS.remove(tempPath);
       return false;
     }
@@ -1905,7 +1930,8 @@ namespace {
     if (in.isNull()) return;
     if (!in.containsKey("activeLevel") || !in["activeLevel"].is<JsonArrayConst>()) return;
     JsonArrayConst a = in["activeLevel"].as<JsonArrayConst>();
-    uint8_t levels[8] = {0,0,0,0,0,0,0,0};
+    uint8_t levels[8] = {};
+    for (uint8_t i = 0; i < 8; ++i) levels[i] = ConfigStore::getInputActiveLevel(i);
     uint8_t n = 0;
     for (JsonVariantConst v : a) {
       if (n >= 8) break;
@@ -1930,6 +1956,23 @@ namespace {
     if (o.containsKey("bootDelayMs")) ConfigStore::setOtBootDelayMs((uint32_t)(o["bootDelayMs"] | 15000));
     if (o.containsKey("mode")) ConfigStore::setOtMode(String((const char*)o["mode"]));
     if (o.containsKey("allowRawWrite")) ConfigStore::setOtAllowRawWrite((bool)(o["allowRawWrite"] | false));
+    // Preserve documented advanced OT options across a full power cycle.
+    DynamicJsonDocument existing(2048);
+    deserializeJson(existing, ConfigStore::getOtAdvancedJson());
+    if (!existing.is<JsonObject>()) existing.to<JsonObject>();
+    JsonObject extras = existing.as<JsonObject>();
+    const char* keys[] = {"watchdogTimeoutMs", "maxConsecutiveFailures",
+      "mapEquithermChSetpoint", "mapDhw", "mapNightMode",
+      "minChSetpointC", "maxChSetpointC", "dhwSetpointC",
+      "dhwBoostChSetpointC", "assumedMaxBoilerKw"};
+    bool changed = false;
+    for (const char* key : keys) {
+      if (o.containsKey(key)) { extras[key] = o[key]; changed = true; }
+    }
+    if (changed) {
+      String serialized; serializeJson(extras, serialized);
+      ConfigStore::setOtAdvancedJson(serialized);
+    }
   }
 
   static void applyBleSection(JsonObjectConst b) {
@@ -2398,9 +2441,13 @@ namespace {
 
   static void handleEquithermCmd() {
     if (rejectActionRateLimit("eq_cmd", 250UL, 12, 10000UL, "eq_guard")) return;
+    const uint32_t writeErrorsBefore = ConfigStore::persistenceFailureCount();
     const String body = g_srv.arg("plain");
     String err;
-    const bool ok = equithermHandleCmdJson(body, err);
+    bool ok = equithermHandleCmdJson(body, err);
+    if (ConfigStore::persistenceFailureCount() != writeErrorsBefore) {
+      ok = false; err = String("nvs_write_failed:") + ConfigStore::lastPersistenceFailureKey();
+    }
     DynamicJsonDocument doc(512);
     doc["ok"] = ok;
     if (!ok) doc["err"] = err;
@@ -2428,9 +2475,13 @@ namespace {
 
   static void handleMixingCmd() {
     if (rejectActionRateLimit("mix_cmd", 100UL, 20, 10000UL, "mix_guard")) return;
+    const uint32_t writeErrorsBefore = ConfigStore::persistenceFailureCount();
     const String body = g_srv.arg("plain");
     String err;
-    const bool ok = mixingValveHandleCmdJson(body, err);
+    bool ok = mixingValveHandleCmdJson(body, err);
+    if (ConfigStore::persistenceFailureCount() != writeErrorsBefore) {
+      ok = false; err = String("nvs_write_failed:") + ConfigStore::lastPersistenceFailureKey();
+    }
     DynamicJsonDocument doc(512);
     doc["ok"] = ok;
     if (!ok) doc["err"] = err;

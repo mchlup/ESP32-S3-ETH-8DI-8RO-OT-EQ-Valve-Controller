@@ -16,7 +16,7 @@
 
 namespace {
   String buildOpenThermConfigJson() {
-    DynamicJsonDocument doc(512);
+    DynamicJsonDocument doc(2048);
     JsonObject ot = doc.createNestedObject("opentherm");
     ot["enabled"] = ConfigStore::getOtEnabled();
     ot["autoStart"] = ConfigStore::getOtAutoStart();
@@ -26,6 +26,20 @@ namespace {
     ot["mode"] = mode;
     ot["allowRawWrite"] = ConfigStore::getOtAllowRawWrite();
     ot["boilerControl"] = mode == "control" ? "opentherm" : "relay";
+    // Durable advanced OpenTherm settings are applied before fixed transport
+    // and safety fields, so an imported JSON cannot remap Waveshare GPIOs.
+    DynamicJsonDocument extra(2048);
+    if (!deserializeJson(extra, ConfigStore::getOtAdvancedJson()) && extra.is<JsonObject>()) {
+      for (JsonPairConst kv : extra.as<JsonObjectConst>()) {
+        const String key(kv.key().c_str());
+        if (key != "enabled" && key != "autoStart" && key != "pollMs" &&
+            key != "bootDelayMs" && key != "mode" && key != "allowRawWrite" &&
+            key != "boilerControl" && key != "rxPin" && key != "txPin" &&
+            key != "invertRx" && key != "invertTx" && key != "autoDetectLogic") {
+          ot[kv.key()] = kv.value();
+        }
+      }
+    }
     String out;
     serializeJson(doc, out);
     return out;

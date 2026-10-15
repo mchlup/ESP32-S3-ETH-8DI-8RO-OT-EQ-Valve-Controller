@@ -222,7 +222,7 @@
         try{ body = JSON.parse(txt); }catch{}
       }
       if(!r.ok){
-        const msg = body?.msg || body?.error || body?.message || txt || `HTTP ${r.status} for ${path}`;
+        const msg = body?.msg || body?.err || body?.error || body?.message || txt || `HTTP ${r.status} for ${path}`;
         const retryAfterMs = Number(body?.retryAfterMs);
         if(r.status === 429){
           const extra = Number.isFinite(retryAfterMs) && retryAfterMs > 0 ? ` Zkus to znovu za ${Math.ceil(retryAfterMs/1000)} s.` : " Zkus to znovu za chvíli.";
@@ -278,6 +278,11 @@
       setBusy(btn, true, busyText);
       try{
         return await task();
+      }catch(e){
+        const message = String(e?.message || e || "Neznámá chyba");
+        log("UI action error: " + message);
+        toast("Akce se nezdařila", message, "⚠");
+        return null;
       }finally{
         setBusy(btn, false);
       }
@@ -2392,7 +2397,10 @@ async function thermoSave(){
       },
 
       async postConfigSection(section, obj){
-        return await api.postJson(`/api/config/${encodeURIComponent(section)}`, obj ?? {}, 10000);
+        const result = await api.postJson(`/api/config/${encodeURIComponent(section)}`, obj ?? {}, 10000);
+        if(result?.ok === false) throw new Error(result.err || result.msg || "Uložení konfigurace selhalo.");
+        if(result?.snapshotSaved === false) log(`configuration ${section}: backup snapshot not saved`);
+        return result;
       },
       async eqCmd(obj){
         return await api.postJson("/api/equitherm/cmd", obj ?? {}, 6000);
@@ -3734,7 +3742,7 @@ async function otRwWrite(){
     }
 
     function collectMixingConfigFromForm(){
-      const n = (id, fallback) => { const v = Number(document.getElementById(id)?.value); return Number.isFinite(v) ? v : fallback; };
+      const n = (id, fallback) => { const raw = document.getElementById(id)?.value; if(raw == null || raw.trim() === "") return fallback; const v = Number(raw); return Number.isFinite(v) ? v : fallback; };
       return {
         enabled: !!document.getElementById("hMixEnabled")?.checked,
         disabledAction: String(document.getElementById("hMixDisabledAction")?.value || "hold"),
@@ -4028,6 +4036,7 @@ async function otRwWrite(){
       if(!cfg) return;
       const force = !!options.force;
       if(state.ui?.eqConfigDirty && !force) return;
+      const preserveHeatingPlanner = isPendingSaveDirty("heatPlan");
       state.dev = state.dev || {};
       state.dev.eqCfgRaw = cfg;
       setInputBool("hEqEnabled", cfg?.enabled);
@@ -4102,7 +4111,7 @@ async function otRwWrite(){
       setInputNumber("hSummerOffAboveC", cfg?.summerOffAboveC, 1);
       setInputNumber("hSummerOnBelowC", cfg?.summerOnBelowC, 1);
       renderEquithermEnableControls();
-      if(cfg?.schedule?.week){
+      if(cfg?.schedule?.week && !preserveHeatingPlanner){
         state.schedules.heatingDay = Array.from({length:7}, () => []);
         for(const day of (cfg.schedule.week || [])){
           const di = ["mon","tue","wed","thu","fri","sat","sun"].indexOf(String(day?.day || "").toLowerCase());
@@ -6376,6 +6385,9 @@ updatePlannerStateBadges();
       if(mixSaveBtn){
         mixSaveBtn.addEventListener("click", () => withButtonBusy(mixSaveBtn, "Ukládám…", async () => {
           const cfg = collectMixingConfigFromForm();
+          if(cfg.tankHysteresisC > cfg.tankMinDeltaC){
+            throw new Error("Hystereze AKU nesmí být vyšší než minimální rezerva AKU.");
+          }
           await api.postConfigSection("mixing", cfg);
           setMixConfigDirty(false);
           state.dev.mixCfgLoaded = false;

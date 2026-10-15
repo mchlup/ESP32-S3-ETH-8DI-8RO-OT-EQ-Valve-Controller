@@ -1,12 +1,35 @@
 #include "ConfigStore.h"
 
 #include <Preferences.h>
+#include <nvs.h>
+#include <esp_idf_version.h>
+#include <string.h>
+#include <math.h>
+#include <stdlib.h>
 
 namespace {
   Preferences g_prefs;
   bool g_inited = false;
   uint16_t g_batchDepth = 0;
   bool g_writeSessionOpen = false;
+  uint32_t g_persistenceFailureCount = 0;
+  String g_lastPersistenceFailureKey;
+
+  void notePersistenceFailure(const char* key) {
+    ++g_persistenceFailureCount;
+    g_lastPersistenceFailureKey = key ? key : "unknown";
+    nvs_stats_t stats = {};
+    const esp_err_t statsErr = nvs_get_stats("nvs", &stats);
+    if (statsErr == ESP_OK) {
+      Serial.printf("[CFG] NVS write/readback failed: %s; used=%u free=%u total=%u entries\n",
+                    g_lastPersistenceFailureKey.c_str(),
+                    (unsigned)stats.used_entries, (unsigned)stats.free_entries,
+                    (unsigned)stats.total_entries);
+    } else {
+      Serial.printf("[CFG] NVS write/readback failed: %s; stats error=%d\n",
+                    g_lastPersistenceFailureKey.c_str(), (int)statsErr);
+    }
+  }
 
   // Defaults
   uint8_t  g_inLevels[8] = {0,0,0,0,0,0,0,0}; // default active-low
@@ -17,6 +40,7 @@ namespace {
   uint32_t g_otBootDelayMs = 15000;
   String   g_otMode = "readOnly";
   bool     g_otAllowRawWrite = false;
+  String   g_otAdvancedJson = "{}";
 
   bool     g_bleEnabled = false;
   String   g_bleNamePrefix = "ESP-Meteostanice";
@@ -189,6 +213,7 @@ namespace {
   static constexpr const char* K_OT_BOOT = "ot_boot";
   static constexpr const char* K_OT_MODE = "ot_mode";
   static constexpr const char* K_OT_RAWW = "ot_raww";
+  static constexpr const char* K_OT_ADV = "ot_extra";
 
   static constexpr const char* K_BLE_EN = "ble_en";
   static constexpr const char* K_BLE_NAME = "ble_name";
@@ -373,6 +398,7 @@ static constexpr const char* K_EQ_BA_CH = "eq_ba_ch";
     g_otPollMs      = g_prefs.getUInt(K_OT_POLL, g_otPollMs);
     g_otBootDelayMs = g_prefs.getUInt(K_OT_BOOT, g_otBootDelayMs);
     g_otMode        = g_prefs.getString(K_OT_MODE, g_otMode);
+    g_otAdvancedJson = g_prefs.getString(K_OT_ADV, g_otAdvancedJson);
     g_otAllowRawWrite = g_prefs.getBool(K_OT_RAWW, g_otAllowRawWrite);
 
     g_bleEnabled    = g_prefs.getBool(K_BLE_EN, g_bleEnabled);
@@ -493,7 +519,35 @@ static constexpr const char* K_EQ_BA_CH = "eq_ba_ch";
     g_eqMixTravelToBMs = g_prefs.getUInt(K_EQ_MIX_TB, g_eqMixTravelMs);
     g_eqMixCalibrationSeatMs = g_prefs.getUInt(K_EQ_MIX_SEAT, g_eqMixCalibrationSeatMs);
     g_eqMixAutoRecalibrationMs = g_prefs.getUInt(K_EQ_MIX_RECAL, g_eqMixAutoRecalibrationMs);
-    g_eqMixAdvancedJson = g_prefs.getString(K_EQ_MIX_ADV, g_eqMixAdvancedJson);
+    // Migration: older firmware saved the mixed configuration as a long STR.
+    // Large strings require contiguous free NVS entries in ONE page. A BLOB
+    // spans multiple pages and remains writable on fragmented NVS partitions.
+    // Reuse the original key; do not allocate a second large NVS value.
+    const PreferenceType advType = g_prefs.getType(K_EQ_MIX_ADV);
+    if (advType == PT_BLOB) {
+      const size_t bytes = g_prefs.getBytesLength(K_EQ_MIX_ADV);
+      // Maximum serialized TECH mixing+weather object (incl. trailing NUL).
+      if (bytes >= 3 && bytes <= 8192) {
+        char* buffer = (char*)malloc(bytes);
+        if (buffer) {
+          const size_t readCount = g_prefs.getBytes(K_EQ_MIX_ADV, buffer, bytes);
+          if (readCount == bytes && buffer[bytes - 1] == '\0' &&
+              strlen(buffer) == bytes - 1) {
+            g_eqMixAdvancedJson = String(buffer);
+          } else {
+            Serial.println("[CFG] Invalid mixer NVS blob; using safe defaults");
+          }
+          free(buffer);
+        } else {
+          Serial.println("[CFG] Insufficient RAM to read mixer NVS blob");
+        }
+      } else {
+        Serial.printf("[CFG] Invalid mixer NVS blob length: %u\n", (unsigned)bytes);
+      }
+    } else if (advType == PT_STR) {
+      // Legacy value stays readable until the first successful BLOB write.
+      g_eqMixAdvancedJson = g_prefs.getString(K_EQ_MIX_ADV, g_eqMixAdvancedJson);
+    }
     g_setupWizardCompletedVersion = g_prefs.getUInt(K_WIZ_VER, g_setupWizardCompletedVersion);
     g_eqMixTempSourceA = normalizeMixTempSourceA(g_prefs.getString(K_EQ_MIX_SRC_A, g_eqMixTempSourceA));
     g_eqMixTempSourceB = normalizeMixTempSourceB(g_prefs.getString(K_EQ_MIX_SRC_B, g_eqMixTempSourceB));
@@ -574,6 +628,7 @@ static constexpr const char* K_EQ_BA_CH = "eq_ba_ch";
     if (g_bleScanMs > 60000) g_bleScanMs = 60000;
 
     if (g_otMode != "readOnly" && g_otMode != "control") g_otMode = "readOnly";
+    if (!g_otAdvancedJson.length()) g_otAdvancedJson = "{}";
 
     // Clamp DHW
     if (g_dhwTempMaxAgeMs < 10000) g_dhwTempMaxAgeMs = 10000;
@@ -702,42 +757,89 @@ static constexpr const char* K_EQ_BA_CH = "eq_ba_ch";
     g_writeSessionOpen = false;
   }
 
+  // Preferences returns the number of bytes successfully persisted.
+  // Never confuse an in-RAM update with a successful NVS commit; read back
+  // values while the same namespace is open to catch short/failed writes.
   void saveBytes(const char* key, const void* data, size_t len) {
-    if (!beginWriteSession()) return;
-    g_prefs.putBytes(key, data, len);
+    if (!beginWriteSession()) { notePersistenceFailure(key); return; }
+    const size_t written = g_prefs.putBytes(key, data, len);
+    const size_t readLength = g_prefs.getBytesLength(key);
+    bool ok = written == len && readLength == len;
+    if (ok && len <= 256) {
+      uint8_t check[256];
+      ok = g_prefs.getBytes(key, check, len) == len &&
+           memcmp(check, data, len) == 0;
+    }
+    if (!ok) {
+      Serial.printf("[CFG] NVS BLOB key=%s requested=%u written=%u storedLength=%u\n",
+                    key, (unsigned)len, (unsigned)written, (unsigned)readLength);
+      notePersistenceFailure(key);
+    }
     endWriteSessionIfNeeded();
   }
 
   void saveBool(const char* key, bool v) {
-    if (!beginWriteSession()) return;
-    g_prefs.putBool(key, v);
+    if (!beginWriteSession()) { notePersistenceFailure(key); return; }
+    const bool ok = g_prefs.putBool(key, v) == 1 &&
+                    g_prefs.getBool(key, !v) == v;
+    if (!ok) notePersistenceFailure(key);
     endWriteSessionIfNeeded();
   }
 
   void saveUInt(const char* key, uint32_t v) {
-    if (!beginWriteSession()) return;
-    g_prefs.putUInt(key, v);
+    if (!beginWriteSession()) { notePersistenceFailure(key); return; }
+    const bool ok = g_prefs.putUInt(key, v) == sizeof(uint32_t) &&
+                    g_prefs.getUInt(key, ~v) == v;
+    if (!ok) notePersistenceFailure(key);
     endWriteSessionIfNeeded();
   }
 
   void saveString(const char* key, const String& v) {
-    if (!beginWriteSession()) return;
-    g_prefs.putString(key, v);
+    if (!beginWriteSession()) { notePersistenceFailure(key); return; }
+    // Arduino-ESP32 Preferences::putString() returns strlen(value), NOT
+    // strlen(value) + 1 (the latter is getStringLength()'s convention).
+    // The incorrect +1 check reported a false NVS failure after every
+    // successful write, most visibly for eq_mx_adv / mixing config.
+    const bool same = g_prefs.isKey(key) &&
+                      g_prefs.getStringLength(key) == v.length() + 1 &&
+                      g_prefs.getString(key, String()) == v;
+    bool ok = same;
+    if (!ok) {
+      const size_t written = g_prefs.putString(key, v);
+      // Empty strings legitimately return 0 even when successfully stored;
+      // a complete NVS readback distinguishes them from write failures.
+      const bool sizeOk = written == v.length();
+      ok = sizeOk && g_prefs.isKey(key) &&
+           g_prefs.getStringLength(key) == v.length() + 1 &&
+           g_prefs.getString(key, String()) == v;
+    }
+    if (!ok) notePersistenceFailure(key);
     endWriteSessionIfNeeded();
   }
 
   void saveU64(const char* keyHi, const char* keyLo, uint64_t v) {
     uint32_t hi=0, lo=0;
     unpack64(v, hi, lo);
-    if (!beginWriteSession()) return;
-    g_prefs.putUInt(keyHi, hi);
-    g_prefs.putUInt(keyLo, lo);
+    if (!beginWriteSession()) {
+      notePersistenceFailure(keyHi); notePersistenceFailure(keyLo); return;
+    }
+    const bool okHi = g_prefs.putUInt(keyHi, hi) == sizeof(uint32_t) &&
+                      g_prefs.getUInt(keyHi, ~hi) == hi;
+    const bool okLo = g_prefs.putUInt(keyLo, lo) == sizeof(uint32_t) &&
+                      g_prefs.getUInt(keyLo, ~lo) == lo;
+    if (!okHi) notePersistenceFailure(keyHi);
+    if (!okLo) notePersistenceFailure(keyLo);
     endWriteSessionIfNeeded();
   }
 
   void saveFloat(const char* key, float v) {
-    if (!beginWriteSession()) return;
-    g_prefs.putFloat(key, v);
+    if (!beginWriteSession()) { notePersistenceFailure(key); return; }
+    const float readBack = ([&]() {
+      const size_t count = g_prefs.putFloat(key, v);
+      if (count != sizeof(float)) return NAN;
+      return g_prefs.getFloat(key, NAN);
+    })();
+    if (!(readBack == v || (isnan(readBack) && isnan(v)))) notePersistenceFailure(key);
     endWriteSessionIfNeeded();
   }
 
@@ -785,6 +887,27 @@ static constexpr const char* K_EQ_BA_CH = "eq_ba_ch";
 }
 
 namespace ConfigStore {
+  uint32_t persistenceFailureCount() { return g_persistenceFailureCount; }
+  String lastPersistenceFailureKey() { return g_lastPersistenceFailureKey; }
+
+  bool hasPersistedConfiguration() {
+    // A single old/new key is sufficient to preserve the *whole* namespace.
+    // Do not infer an empty NVS from the absence of only eq_en/ot_en/dhw_en.
+#if ESP_IDF_VERSION_MAJOR >= 5
+    nvs_iterator_t it = nullptr;
+    const esp_err_t err = nvs_entry_find("nvs", "cfg", NVS_TYPE_ANY, &it);
+    const bool found = it != nullptr;
+    if (it) nvs_release_iterator(it);
+    // On a storage error, fail closed: never import an old snapshot over NVS.
+    return found || (err != ESP_OK && err != ESP_ERR_NVS_NOT_FOUND);
+#else
+    nvs_iterator_t it = nvs_entry_find("nvs", "cfg", NVS_TYPE_ANY);
+    const bool found = it != nullptr;
+    if (it) nvs_release_iterator(it);
+    return found;
+#endif
+  }
+
   void begin() {
     if (g_inited) return;
     g_inited = true;
@@ -853,6 +976,11 @@ namespace ConfigStore {
 
   bool getOtAllowRawWrite() { begin(); return g_otAllowRawWrite; }
   void setOtAllowRawWrite(bool v) { begin(); g_otAllowRawWrite = v; saveBool(K_OT_RAWW, v); }
+  String getOtAdvancedJson() { begin(); return g_otAdvancedJson; }
+  void setOtAdvancedJson(const String& json) {
+    begin(); g_otAdvancedJson = json.length() ? json : String("{}");
+    saveString(K_OT_ADV, g_otAdvancedJson);
+  }
 
   // BLE
   bool getBleEnabled() { begin(); return g_bleEnabled; }
@@ -1177,8 +1305,30 @@ namespace ConfigStore {
   String getEqMixAdvancedJson() { begin(); return g_eqMixAdvancedJson; }
   void setEqMixAdvancedJson(const String& v) {
     begin();
-    g_eqMixAdvancedJson = v.length() ? v : String("{}");
-    saveString(K_EQ_MIX_ADV, g_eqMixAdvancedJson);
+    const String next = v.length() ? v : String("{}");
+    if (next.length() + 1 > 8192) {
+      Serial.printf("[CFG] Mixer JSON exceeds 8192-byte storage budget (%u)\n",
+                    (unsigned)next.length());
+      notePersistenceFailure(K_EQ_MIX_ADV);
+      return;
+    }
+
+    // NVS strings need contiguous page space; blobs can span pages. Reusing
+    // the same key migrates the old string in-place, without a second copy.
+    // Do not rewrite an unchanged blob (flash wear and extra fragmentation).
+    if (next == g_eqMixAdvancedJson && beginWriteSession()) {
+      const bool alreadyBlob = g_prefs.getType(K_EQ_MIX_ADV) == PT_BLOB;
+      endWriteSessionIfNeeded();
+      if (alreadyBlob) return;
+    }
+
+    const uint32_t failuresBefore = g_persistenceFailureCount;
+    saveBytes(K_EQ_MIX_ADV, next.c_str(), next.length() + 1);
+    // Cache only successfully persisted data. A 500 response must not expose
+    // a newer configuration that disappears after power loss.
+    if (failuresBefore == g_persistenceFailureCount) {
+      g_eqMixAdvancedJson = next;
+    }
   }
   uint32_t getSetupWizardCompletedVersion() { begin(); return g_setupWizardCompletedVersion; }
   void setSetupWizardCompletedVersion(uint32_t v) {
