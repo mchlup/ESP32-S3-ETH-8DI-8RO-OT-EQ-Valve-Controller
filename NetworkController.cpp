@@ -1,5 +1,6 @@
 #include "Features.h"
 #include "NetworkController.h"
+#include "DeviceDiagnostics.h"
 
 #if defined(FEATURE_NETWORK)
 
@@ -324,6 +325,7 @@ void networkLoop() {
 
   const bool wifiNow = (WiFi.status() == WL_CONNECTED);
   const bool haveNet = wifiNow || s_ethConnected;
+  DeviceDiagnostics::noteNetwork(wifiNow, s_ethConnected);
 
   if (!haveNet) {
     wm.process();
