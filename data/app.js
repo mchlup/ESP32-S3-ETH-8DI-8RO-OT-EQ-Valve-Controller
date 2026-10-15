@@ -4006,6 +4006,30 @@ async function otRwWrite(){
         setInputNumber("hHeatNight"+suffix,night4[i],1);
       });
       syncHeatingCurveUi();
+      // A saved heating curve is also the valve's base target. Refresh its
+      // editor unless the operator has unsaved changes on the valve page.
+      if(!state.ui?.mixConfigDirty){
+        const mixCurve=state.mixConfig?.curve || {};
+        mixCurve.mode=curveMode;
+        mixCurve.day2=cfg.day;mixCurve.night2=cfg.night;
+        mixCurve.day4=day4;mixCurve.night4=night4;
+        mixCurve.minFlowC=cfg.limits?.minFlowC;
+        mixCurve.maxFlowC=cfg.limits?.maxFlowC;
+        if(state.mixConfig)state.mixConfig.curve=mixCurve;
+        const cm=document.getElementById("hMixCurveMode");if(cm)cm.value=curveMode;
+        const syncNumbers=[
+          ["hMixDay2OutCold",cfg.day?.outColdC],["hMixDay2FlowCold",cfg.day?.flowColdC],
+          ["hMixDay2OutWarm",cfg.day?.outWarmC],["hMixDay2FlowWarm",cfg.day?.flowWarmC],
+          ["hMixNight2OutCold",cfg.night?.outColdC],["hMixNight2FlowCold",cfg.night?.flowColdC],
+          ["hMixNight2OutWarm",cfg.night?.outWarmC],["hMixNight2FlowWarm",cfg.night?.flowWarmC],
+          ["hMixCurveMinFlow",cfg.limits?.minFlowC],["hMixCurveMaxFlow",cfg.limits?.maxFlowC]
+        ];
+        ["M20","M10","0","P10"].forEach((s,i)=>{
+          syncNumbers.push(["hMixDay"+s,day4[i]],["hMixNight"+s,night4[i]]);
+        });
+        for(const [id,value] of syncNumbers)setInputNumber(id,value,1);
+        syncMixCurveUi();
+      }
 
       // limits (flow temp clamp)
       const displayLimits = normalizeHeatingFlowLimits(limits);
@@ -4130,6 +4154,14 @@ async function otRwWrite(){
        ["hMixNightM20",night4[0]],["hMixNightM10",night4[1]],["hMixNight0",night4[2]],["hMixNightP10",night4[3]]]
         .forEach(([id,v])=>setInputNumber(id,v,1));
       syncMixCurveUi();
+      // The valve configuration API mirrors the authoritative Equitherm
+      // settings. Keeping both editors in step avoids accidental rollback.
+      if(!state.ui?.eqConfigDirty){
+        const cc={curveMode,day:d2,night:n2,weather4:{day:day4,night:night4},
+          limits:{minFlowC:curve.minFlowC,maxFlowC:curve.maxFlowC}};
+        const savedEq=state.dev?.eqCfgRaw || {};
+        applyEqConfigToForm({...savedEq,...cc},{force:true});
+      }
       redrawEquithermViews();
       updateMixDirectionUi();
       if(cfg.runtime && !state.mixStatus) applyMixingStatus(cfg.runtime);
@@ -6135,6 +6167,8 @@ updatePlannerStateBadges();
             output, boilerAssist
           });
           setEqConfigDirty(false);
+          const persistedEq=await api.fetchConfigSection("equitherm");
+          if(persistedEq)applyEqConfigToForm(persistedEq,{force:true});
           toast("Topení", "Nastavení uloženo do zařízení.", "✅");
           log("heating apply -> /api/config/equitherm");
           // allow refresh to hydrate updated values
