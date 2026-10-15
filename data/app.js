@@ -5143,7 +5143,12 @@ async function serviceIoCall(payload){
         targetC: vTgt,
       };
       if(overviewVisible) renderOverviewMixStatus(mixDashboardValues);
-      if(mixingVisible) renderMixingDashboard(mixDashboardValues);
+      // The overview mirrors the exact same operating widgets and actuator
+      // controls, so update their original sources even while overview is open.
+      if(mixingVisible || overviewVisible){
+        renderMixingDashboard(mixDashboardValues);
+        window.ThermaV5?.syncMixPanels?.();
+      }
 
       updatePlannerStateBadges();
 
