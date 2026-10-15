@@ -21,12 +21,6 @@
     live:"●", io:"▦", ot:"⌁", info:"◈", chart:"⌁", flag:"◌"
   }[name] || "◌");
 
-  function heading(kicker,title,subtitle,append) {
-    const h = make("header", "v5-section-header");
-    const copy = make("div","v5-header-copy",
-      '<span class="v5-overline">'+kicker+'</span><h2>'+title+'</h2><p>'+subtitle+'</p>');
-    put(h,copy,append); return h;
-  }
   function card(title, subtitle, extraClass) {
     const root = make("article","v5-card "+(extraClass||""));
     put(root,make("div","v5-card-head",
@@ -107,60 +101,104 @@
       '<div class="v5-trend-shell"><canvas id="v5-trend" height="210" aria-label="Graf historie kotle a požadované teploty"></canvas>'+
       '<div class="v5-trend-placeholder" id="v5-trend-placeholder">Čekám na první naměřené hodnoty…</div></div>';
   }
+  // The overview uses actual clones of the valve controller's three operating
+  // panels. Every ID is namespaced; there is only one set of real actuator
+  // buttons, owned and wired by app.js on the Mixing Valve page.
+  const mixMirrorPairs=[];
+  const mixMirrorButtonObserver=typeof MutationObserver==="function"
+    ? new MutationObserver(syncMixPanelMirrors) : null;
+
+  function cloneMixOperatingPanel(original){
+    const copy=original.cloneNode(true);
+    copy.classList.add("v5-overview-mix-copy");
+    for(const node of copy.querySelectorAll("[id]")){
+      const sourceId=node.id;
+      node.id="v5-overview-copy-"+sourceId;
+      node.dataset.v5MirrorOf=sourceId;
+      mixMirrorPairs.push({sourceId,copy:node});
+      if(node.tagName==="BUTTON"){
+        // Forward to the original button so validation, busy locking,
+        // manual-hold logic and the emergency STOP stay identical.
+        node.addEventListener("click",e=>{
+          e.preventDefault();
+          const source=byId(sourceId);
+          if(!source || source.disabled)return;
+          source.click();
+          syncMixPanelMirrors();
+        });
+        const source=byId(sourceId);
+        if(source && mixMirrorButtonObserver){
+          mixMirrorButtonObserver.observe(source,{
+            attributes:true,attributeFilter:["disabled","title","class"],
+            childList:true,characterData:true,subtree:true
+          });
+        }
+      }
+    }
+    for(const node of copy.querySelectorAll("[for],[aria-labelledby],[aria-describedby],[aria-controls]")){
+      for(const attr of ["for","aria-labelledby","aria-describedby","aria-controls"]){
+        const raw=node.getAttribute(attr);
+        if(!raw)continue;
+        node.setAttribute(attr,raw.split(/\\s+/).map(id=>
+          byId(id)?"v5-overview-copy-"+id:id).join(" "));
+      }
+    }
+    return copy;
+  }
+
+  function syncMixPanelMirrors(){
+    for(const {sourceId,copy} of mixMirrorPairs){
+      const source=byId(sourceId);
+      if(!source)continue;
+      if(!source.firstElementChild && copy.textContent!==source.textContent){
+        copy.textContent=source.textContent;
+      }
+      if(copy.style.cssText!==source.style.cssText){
+        copy.style.cssText=source.style.cssText;
+      }
+      if(source.dataset.kind !== copy.dataset.kind){
+        if(source.dataset.kind)copy.dataset.kind=source.dataset.kind;
+        else delete copy.dataset.kind;
+      }
+      if(source.tagName==="BUTTON"){
+        if(copy.disabled!==source.disabled)copy.disabled=source.disabled;
+        if(copy.title!==source.title)copy.title=source.title;
+        if(copy.className!==source.className)copy.className=source.className;
+      }
+    }
+  }
+
   function overview() {
     const section=byId("view-overview");if(!section)return;
     const originals=Array.from(section.children);
     const original=cls(section,":scope > .card");
     section.replaceChildren();
-    const top=make("div","v5-page-title-row v5-overview-head");
-    put(top,heading("PŘEHLED / AKTUÁLNÍ STAV","Přehled vytápění",
-      "Aktuální údaje z kotle, směšovacího ventilu a cirkulace."));
-    top.appendChild(make("div","v5-primary-actions",
-      '<button class="btn" type="button" data-open-view="heating">Nastavení topení ↗</button>'+
-      '<button class="btn" type="button" data-open-view="mixing">Směšovací ventil ↗</button>'));
-    section.appendChild(top);
 
     const status=make("div","v5-overview-status",
       '<div><span>Režim topení</span><strong id="v5-overview-mode">—</strong></div>'+
       '<div><span>Vstup IN1</span><strong id="v5-overview-in1">—</strong></div>'+
       '<div><span>OpenTherm</span><strong id="v5-overview-ot">—</strong></div>'+
-      '<div><span>Cirkulace</span><strong id="v5-overview-circ">—</strong></div>');
+      '<div id="v5-overview-pump" data-running="unknown" role="status" aria-live="polite"><span>Cirkulační čerpadlo TUV</span><strong id="v5-overview-circ">—</strong></div>');
     section.appendChild(status);
 
-    const metrics=make("section","v5-metrics-wrap v5-overview-metrics",metricsMarkup("v5-ov"));
-    section.appendChild(metrics);
+    section.appendChild(make("section","v5-metrics-wrap v5-overview-metrics",metricsMarkup("v5-ov")));
 
-    const row=make("div","v5-overview-primary");
-    const mixing=card("Směšovací ventil","Teplota a skutečný stav portů A, B a AB","v5-overview-mixer");
-    cardBody(mixing).innerHTML=
-      '<div class="v5-mixer-visual" aria-label="A přívod + B vratná větev = smíchaná voda AB">'+
-       '<div class="v5-mixer-inlets">'+
-        '<div class="v5-port hot"><span>A · teplý přívod</span><strong id="v5-ov-mix-a">—</strong></div>'+
-        '<div class="v5-port cold"><span>B · vratná větev</span><strong id="v5-ov-mix-b">—</strong></div>'+
-       '</div>'+
-       '<div class="v5-mixer-join"><span>↘</span><strong>◇</strong><span>↙</span></div>'+
-       '<div class="v5-mixer-out"><div><span>AB · výstup do topení</span><strong id="v5-ov-mix-ab">—</strong></div><div><span>Cíl regulace</span><strong id="v5-ov-mix-goal">—</strong></div></div>'+
-      '</div>'+
-      '<div class="v5-position-info"><span>Odhad polohy ventilu</span><strong id="v5-ov-mix-pos">—</strong></div>'+
-      '<div class="v5-position-bar" role="meter" aria-label="Odhad otevření ventilu" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="v5-ov-mix-meter"><i id="v5-ov-mix-fill"></i></div>'+
-      '<div class="v5-position-captions"><span>B · 0 %</span><span>A · 100 %</span></div>'+
-      '<div class="v5-mixer-foot"><span id="v5-ov-mix-dir">Směr: —</span><button class="btn" type="button" data-open-view="mixing">Otevřít regulaci ↗</button></div>';
+    const stage=make("div","v5-mixing-stage v5-overview-mixing-stage");
+    const statusPanel=cls(byId("view-mixing"),".mix-status-panel:not(.mix-status-panel-overview)");
+    const manualPanel=cls(byId("view-mixing"),".mix-schematic-panel");
+    const tankPanel=cls(byId("view-mixing"),".v5-mix-aku-card");
+    if(statusPanel && manualPanel && tankPanel){
+      put(stage,...[statusPanel,manualPanel,tankPanel].map(cloneMixOperatingPanel));
+      section.appendChild(stage);
+      syncMixPanelMirrors();
+    }else{
+      console.error("THERMA: valve operation panels unavailable for overview");
+      const link=make("button","btn","Otevřít směšovací ventil");
+      link.type="button";
+      link.addEventListener("click",()=>byId("sideNav")?.querySelector('[data-view="mixing"]')?.click());
+      section.appendChild(link);
+    }
 
-    const circulation=card("Cirkulační čerpadlo TUV","Stav čerpadla podle relé a požadavků regulace","v5-overview-circ");
-    cardBody(circulation).innerHTML=
-      '<div class="v5-circ-current" data-running="unknown" id="v5-circ-widget">'+
-       '<div class="v5-circ-pump-icon" aria-hidden="true"><span>⟳</span></div>'+
-       '<div class="v5-circ-copy"><span>AKTUÁLNÍ STAV</span><strong id="v5-circ-state">Čekám na zařízení</strong><small id="v5-circ-relay">Relé cirkulace: —</small></div>'+
-      '</div>'+
-      '<div class="v5-circ-facts">'+
-        '<div><span>Požadavek cirkulace</span><strong id="v5-circ-request">—</strong></div>'+
-        '<div><span>Zdroj požadavku</span><strong id="v5-circ-source">—</strong></div>'+
-        '<div><span>Pulzní fáze</span><strong id="v5-circ-pulse">—</strong></div>'+
-        '<div><span>Teplota TUV</span><strong id="v5-circ-temp">—</strong></div>'+
-      '</div>'+
-      '<div class="v5-circ-buttons"><button class="btn" type="button" data-open-view="dhw" data-v5-open-tab="circCfg">Nastavení cirkulace ↗</button>'+
-       '<button class="btn" type="button" data-open-view="dhw" data-v5-open-tab="circPlan">Plán cirkulace ↗</button></div>';
-    put(row,mixing,circulation);section.appendChild(row);
     const trend=card("Trend teploty kotle","Naměřená teplota vůči požadavku OpenTherm.","v5-overview-trend");
     cardBody(trend).innerHTML=trendMarkup();
     section.appendChild(reveal("Graf vývoje topné vody","Naměřená teplota a požadavek kotli, historie posledních 120 vzorků",trend));
@@ -183,8 +221,6 @@
     const relays=byId("hNightRelay")?.closest(".heat-group");
     const chart=cls(main,".chartbox");
     section.replaceChildren();
-    put(section,heading("VYTÁPĚNÍ / EKVITERM","Topení",
-      "Provozní režim, křivky s okamžitým náhledem, OpenTherm a časový program."));
     const p=tabs("heating",[
       ["live","◉ Provoz"],["curve","⌁ Ekvitermní křivky"],
       ["boiler","♨ Kotel a relé"],["plan","◷ Týdenní plán"],["extra","⋯ Další"]
@@ -231,8 +267,9 @@
     const config=cls(section,".mix-configuration-panel");
     const calibrate=cls(section,".mix-calibration-panel");
     section.replaceChildren();
-    put(section,heading("SMĚŠOVÁNÍ / 3CESTNÝ VENTIL","Směšovací okruh","A – teplý přívod · B – vratná větev · AB – výsledná teplota."));
-    if(head){head.classList.add("v5-action-head");section.appendChild(head);}
+    // Keep the live controls but remove the redundant page title/description.
+    const actions=head?.querySelector(".mix-head-actions");
+    if(actions){actions.classList.add("v5-mix-top-actions");section.appendChild(actions);}
     const p=tabs("mixing",[
       ["live","◉ Provoz"],["cfg","⚙ Regulace"],["cal","◇ Kalibrace"]
     ],section);
@@ -271,7 +308,6 @@
     const plannerSave=cls(planner,'[data-pl-save="dhwHeat"]');
     const importExport=["plExport2","plImport2"].map(id=>byId(id)).filter(Boolean);
     section.replaceChildren();
-    put(section,heading("TUV / CIRKULACE","Ohřev a cirkulace","Samostatná nastavení ohřevu, čerpadla, hygieny a časových plánů."));
     const p=tabs("dhw",[
       ["live","◉ Provoz"],["cfg","⚙ Ohřev TUV"],["plan","◷ Plánovač ohřevu"],
       ["circCfg","⟳ Nastavení cirkulace"],["circPlan","◷ Plánovač cirkulace"],["anti","✦ Anti-legionella"]
@@ -312,7 +348,6 @@
     const section=byId("view-accu");if(!section)return;
     const old=Array.from(section.children);
     section.replaceChildren();
-    put(section,heading("AKUMULACE / ZDROJ TEPLA","Akumulační nádrž","Teplotní vrstvy zásobníku a disponibilní teplo pro topný okruh."));
     const widget=card("Teplotní profil nádrže","Zobrazení vychází z teplotních čidel připojených k zařízení.","v5-tank-primary");
     const content=cardBody(widget);
     content.innerHTML='<div class="v5-tank-layout"><div class="v5-tank-cylinder" aria-label="Teplotní profil akumulační nádrže">'+
@@ -337,7 +372,6 @@
     const alert=ds.find(n=>n.querySelector("#pressAlarmEnable"));
     const config=ds.find(n=>n.querySelector("#otEnable"));
     section.replaceChildren();
-    put(section,heading("KOTEL / OPEN THERM","OpenTherm","Teploty, modulace výkonu, stabilita komunikace a výměna Data-ID."));
     if(head){head.classList.add("v5-action-head");section.appendChild(head);}
     const p=tabs("opentherm",[
       ["live","◉ Provoz"],["cfg","⚙ Konfigurace"],["diag","⌁ Data-ID a diagnostika"]
@@ -363,7 +397,6 @@
     const body=cls(main,":scope > .card-body");
     const details=Array.from(body?.children||[]).filter(e=>e.tagName==="DETAILS");
     section.replaceChildren();
-    put(section,heading("MĚŘENÍ / SENZORY","Teploměry a čidla","Přiřazení DS18B20, diagnostika připojení a BLE meteorologie."));
     if(head){head.classList.add("v5-action-head");section.appendChild(head);}
     const p=tabs("thermometers",[["sensors","◉ DS18B20"],["ports","◇ Směšovací porty"],["ble","◌ BLE a další"]],section);
     for(const d of details){
@@ -387,7 +420,6 @@
     const section=byId("view-io");if(!section)return;
     const old=Array.from(section.children);
     section.replaceChildren();
-    put(section,heading("VSTUPY A VÝSTUPY / GPIO","I/O panel","Okamžité zobrazení aktivních vstupů a stavů relé."));
     const board=card("Digitální vstupy","Vstup IN1 přepíná komfort / útlum, IN2 a IN3 řídí příslušné požadavky.","v5-io-panel");
     cardBody(board).innerHTML='<div class="v5-digital-grid">'+
       '<div class="v5-digital"><span>IN1 <small>Vytápění</small></span><strong id="v5-in1">—</strong></div>'+
@@ -413,7 +445,6 @@
     const body=cls(main,":scope > .card-body");
     const details=Array.from(body?.children||[]).filter(x=>x.tagName==="DETAILS");
     section.replaceChildren();
-    put(section,heading("SPRÁVA / SERVIS","Diagnostika a systém","Přehled stavu připojení, MQTT, nastavení času, aktualizace a logy."));
     if(head){head.classList.add("v5-action-head");section.appendChild(head);}
     const health=make("div","v5-diagnostics-overview",
       '<div><span>HEAP · VOLNÁ PAMĚŤ</span><strong id="v5-heap-free">—</strong></div>'+
@@ -460,7 +491,9 @@
     const relayIndex=Number(s.dev?.dhwCfgRaw?.circ?.relay||4)-1;
     const relay=typeof fast.rr==="boolean"?fast.rr:
       typeof status.circRelayOn==="boolean"?status.circRelayOn:
-      Array.isArray(s.io?.relays)?s.io.relays[Math.max(0,Math.min(7,relayIndex))]:null;
+      (s.fast?.rel && Object.prototype.hasOwnProperty.call(s.fast.rel,"mask")
+        && Array.isArray(s.io?.relays))
+        ? s.io.relays[Math.max(0,Math.min(7,relayIndex))] : null;
     return {
       relay:typeof relay==="boolean"?relay:null,
       requested:typeof fast.cr==="boolean"?fast.cr:typeof status.circRequested==="boolean"?status.circRequested:null,
@@ -550,6 +583,7 @@
     text("v5-mix-aku-note",[tank,middle,bottom].every(Number.isFinite)
       ? "Čidla nahoře / uprostřed / dole • vybraný zdroj může být jiné čidlo než horní."
       : "Nedostupná čidla jsou označena pomlčkou; zkontrolujte připojení a přiřazení DS18B20.");
+    syncMixPanelMirrors();
     const hotWater=finite(temps.dhw_tank,temps.dhw,s.ot?.dhwTemp,sample.dhw);
     const pos=finite(mix.positionPct,eq?.mix?.pct,s.accu?.valve);
     const mode=modeValue(s);
@@ -581,25 +615,11 @@
     text("v5-overview-ot",link?"Připojeno":"Nedostupné");
     const circStatus=circ.relay===true?"Čerpadlo běží":circ.relay===false?"Čerpadlo stojí":"Stav neznámý";
     text("v5-overview-circ",circStatus);
-    text("v5-circ-state",circStatus);
-    text("v5-circ-relay","Výstup R"+circ.relayNo+" • "+
-      (circ.relay===true?"sepnuto":circ.relay===false?"vypnuto":"stav není dostupný"));
-    text("v5-circ-request",circ.requested===true?"Aktivní":circ.requested===false?"Neaktivní":"—");
-    text("v5-circ-source",circ.input===true?"Vstup IN3":circ.scheduled===true?"Týdenní plán":
-      circ.requested===false?"Bez požadavku":"—");
-    text("v5-circ-pulse",circ.pulse===true?"Běh":circ.pulse===false?"Přestávka":"—");
-    text("v5-circ-temp",temp(hotWater));
-    const circWidget=byId("v5-circ-widget");
-    if(circWidget)circWidget.dataset.running=circ.relay===null?"unknown":circ.relay?"yes":"no";
-    const mxA=finite(mix.aC,eq.mix?.ma),mxB=finite(mix.bC,eq.mix?.mb);
-    text("v5-ov-mix-a",temp(mxA));text("v5-ov-mix-b",temp(mxB));
-    text("v5-ov-mix-ab",temp(ab));text("v5-ov-mix-goal",temp(mixGoal));
-    text("v5-ov-mix-pos",pct(pos));
-    text("v5-ov-mix-dir",String(mix.direction||mix.dir||"stop").toLowerCase()==="a"?"Pohyb → A":
-      String(mix.direction||mix.dir||"stop").toLowerCase()==="b"?"Pohyb → B":"Ventil stojí");
-    const meter=byId("v5-ov-mix-meter"),fill=byId("v5-ov-mix-fill");
-    if(meter)meter.setAttribute("aria-valuenow",Number.isFinite(pos)?String(Math.max(0,Math.min(100,Math.round(pos)))):"0");
-    if(fill)fill.style.width=Number.isFinite(pos)?Math.max(0,Math.min(100,pos))+"%":"0%";
+    const circPanel=byId("v5-overview-pump");
+    if(circPanel){
+      circPanel.dataset.running=circ.relay===null?"unknown":(circ.relay?"yes":"no");
+      circPanel.title="Cirkulační čerpadlo • R"+circ.relayNo+" • "+circStatus;
+    }
     text("v5-live-mode",mode);text("v5-live-in1",in1===true?"Aktivní (útlum)":in1===false?"Neaktivní":"—");
     text("v5-live-dhw",dhwActive?"Ohřev aktivní":"Neaktivní");
     text("v5-live-ot",link?"Online":"Nedostupná");
@@ -652,7 +672,7 @@
   }
   function init() {
     if(initialized)return;
-    const tasks=[overview,heating,mixing,dhw,accu,opentherm,thermometers,io,diagnostics];
+    const tasks=[mixing,overview,heating,dhw,accu,opentherm,thermometers,io,diagnostics];
     for(const work of tasks){
       const name=work.name==="diagnostics"?"diag":work.name;
       const view=byId("view-"+name);
@@ -669,7 +689,7 @@
     window.addEventListener("resize",()=>{if(!doc.hidden)scheduleTrend();},{passive:true});
     doc.addEventListener("visibilitychange",()=>{if(!doc.hidden)scheduleTrend();});
   }
-  window.ThermaV5={init,onFast,onView,drawTrend};
+  window.ThermaV5={init,onFast,onView,drawTrend,syncMixPanels:syncMixPanelMirrors};
   if(doc.readyState==="loading")doc.addEventListener("DOMContentLoaded",init,{once:true});
   else init();
 })();
