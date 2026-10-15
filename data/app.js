@@ -4142,21 +4142,28 @@ async function otRwWrite(){
       setInputBool("hMixFloorProtectionEnabled", cfg.floorProtectionEnabled ?? true);
 
       const curve = cfg.curve || {};
-      const curveMode = String(curve.mode || "linear2");
+      // Older /api/mixing/status omits curve entirely: never interpret an
+      // absent mirror as a request to switch the shared curve to linear2.
+      const hasCurve = !!cfg.curve && typeof cfg.curve === "object"
+        && Object.prototype.hasOwnProperty.call(cfg.curve,"mode");
+      const curveMode = hasCurve
+        ? String(curve.mode)
+        : String(state.dev?.eqCfgRaw?.curveMode || document.getElementById("hCurveMode")?.value || "linear2");
       const cm = document.getElementById("hMixCurveMode"); if(cm) cm.value = curveMode;
       const d2=curve.day2||{}, n2=curve.night2||{};
       [["hMixDay2OutCold",d2.outColdC],["hMixDay2FlowCold",d2.flowColdC],["hMixDay2OutWarm",d2.outWarmC],["hMixDay2FlowWarm",d2.flowWarmC],
        ["hMixNight2OutCold",n2.outColdC],["hMixNight2FlowCold",n2.flowColdC],["hMixNight2OutWarm",n2.outWarmC],["hMixNight2FlowWarm",n2.flowWarmC],
        ["hMixCurveMinFlow",curve.minFlowC],["hMixCurveMaxFlow",curve.maxFlowC]]
         .forEach(([id,v])=>setInputNumber(id,v,1));
-      const day4=Array.isArray(curve.day4)?curve.day4:[], night4=Array.isArray(curve.night4)?curve.night4:[];
+      const day4=Array.isArray(curve.day4)?curve.day4:state.dev?.eqCfgRaw?.weather4?.day || [],
+            night4=Array.isArray(curve.night4)?curve.night4:state.dev?.eqCfgRaw?.weather4?.night || [];
       [["hMixDayM20",day4[0]],["hMixDayM10",day4[1]],["hMixDay0",day4[2]],["hMixDayP10",day4[3]],
        ["hMixNightM20",night4[0]],["hMixNightM10",night4[1]],["hMixNight0",night4[2]],["hMixNightP10",night4[3]]]
         .forEach(([id,v])=>setInputNumber(id,v,1));
       syncMixCurveUi();
       // The valve configuration API mirrors the authoritative Equitherm
       // settings. Keeping both editors in step avoids accidental rollback.
-      if(!state.ui?.eqConfigDirty){
+      if(hasCurve && !state.ui?.eqConfigDirty){
         const cc={curveMode,day:d2,night:n2,weather4:{day:day4,night:night4},
           limits:{minFlowC:curve.minFlowC,maxFlowC:curve.maxFlowC}};
         const savedEq=state.dev?.eqCfgRaw || {};
@@ -6829,23 +6836,30 @@ function boot(){
   updateRefreshCadence();
 
   const bootLoad = async () => {
-    let bootstrapped = false;
     connectWs();
-    const bootstrapPromise = api.fetchBootstrap()
-      .then((payload) => applyBootstrapPayload(payload))
-      .catch(() => false);
-    const wsReady = await waitForFirstFastSnapshot(350);
-    if(!wsReady){
-      try{
-        bootstrapped = await bootstrapPromise;
-      }catch(_e){}
+    // A fast WS frame is not a configuration snapshot. Always await a
+    // dedicated config read before declaring the initial UI hydrated.
+    // In particular, /api/mixing/status must not revert the curve selector.
+    let bootstrapped = false;
+    try{
+      bootstrapped = !!applyBootstrapPayload(await api.fetchBootstrap());
+    }catch(e){
+      log("bootstrap failed: " + (e?.message || e));
     }
-    if(!bootstrapped && !state.last){
+    if(!bootstrapped){
       try{
-        await refresh(false);
-      }catch(_e){}
+        const [eq,mix] = await Promise.all([
+          api.fetchConfigSection("equitherm"),
+          api.fetchConfigSection("mixing")
+        ]);
+        if(eq)applyEqConfigToForm(eq,{force:true});
+        if(mix)applyMixingConfigToForm(mix,{force:true});
+      }catch(e){ log("config fallback failed: " + (e?.message || e)); }
     }
-    log(bootstrapped ? "boot ok (bootstrap)" : (state.last ? (wsReady ? "boot ok (ws-first)" : "boot ok (ws)") : "boot ok"));
+    if(!state.last){
+      try{ await refresh(false); }catch(_e){}
+    }
+    log(bootstrapped ? "boot ok (bootstrap)" : "boot ok (fallback)");
   };
   void bootLoad();
 }
