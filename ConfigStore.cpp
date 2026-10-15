@@ -1,12 +1,24 @@
 #include "ConfigStore.h"
 
 #include <Preferences.h>
+#include <nvs.h>
+#include <esp_idf_version.h>
+#include <string.h>
+#include <math.h>
 
 namespace {
   Preferences g_prefs;
   bool g_inited = false;
   uint16_t g_batchDepth = 0;
   bool g_writeSessionOpen = false;
+  uint32_t g_persistenceFailureCount = 0;
+  String g_lastPersistenceFailureKey;
+
+  void notePersistenceFailure(const char* key) {
+    ++g_persistenceFailureCount;
+    g_lastPersistenceFailureKey = key ? key : "unknown";
+    Serial.printf("[CFG] NVS write/readback failed: %s\n", g_lastPersistenceFailureKey.c_str());
+  }
 
   // Defaults
   uint8_t  g_inLevels[8] = {0,0,0,0,0,0,0,0}; // default active-low
@@ -17,6 +29,7 @@ namespace {
   uint32_t g_otBootDelayMs = 15000;
   String   g_otMode = "readOnly";
   bool     g_otAllowRawWrite = false;
+  String   g_otAdvancedJson = "{}";
 
   bool     g_bleEnabled = false;
   String   g_bleNamePrefix = "ESP-Meteostanice";
@@ -189,6 +202,7 @@ namespace {
   static constexpr const char* K_OT_BOOT = "ot_boot";
   static constexpr const char* K_OT_MODE = "ot_mode";
   static constexpr const char* K_OT_RAWW = "ot_raww";
+  static constexpr const char* K_OT_ADV = "ot_extra";
 
   static constexpr const char* K_BLE_EN = "ble_en";
   static constexpr const char* K_BLE_NAME = "ble_name";
@@ -373,6 +387,7 @@ static constexpr const char* K_EQ_BA_CH = "eq_ba_ch";
     g_otPollMs      = g_prefs.getUInt(K_OT_POLL, g_otPollMs);
     g_otBootDelayMs = g_prefs.getUInt(K_OT_BOOT, g_otBootDelayMs);
     g_otMode        = g_prefs.getString(K_OT_MODE, g_otMode);
+    g_otAdvancedJson = g_prefs.getString(K_OT_ADV, g_otAdvancedJson);
     g_otAllowRawWrite = g_prefs.getBool(K_OT_RAWW, g_otAllowRawWrite);
 
     g_bleEnabled    = g_prefs.getBool(K_BLE_EN, g_bleEnabled);
@@ -574,6 +589,7 @@ static constexpr const char* K_EQ_BA_CH = "eq_ba_ch";
     if (g_bleScanMs > 60000) g_bleScanMs = 60000;
 
     if (g_otMode != "readOnly" && g_otMode != "control") g_otMode = "readOnly";
+    if (!g_otAdvancedJson.length()) g_otAdvancedJson = "{}";
 
     // Clamp DHW
     if (g_dhwTempMaxAgeMs < 10000) g_dhwTempMaxAgeMs = 10000;
@@ -702,42 +718,72 @@ static constexpr const char* K_EQ_BA_CH = "eq_ba_ch";
     g_writeSessionOpen = false;
   }
 
+  // Preferences returns the number of bytes successfully persisted.
+  // Never confuse an in-RAM update with a successful NVS commit; read back
+  // values while the same namespace is open to catch short/failed writes.
   void saveBytes(const char* key, const void* data, size_t len) {
-    if (!beginWriteSession()) return;
-    g_prefs.putBytes(key, data, len);
+    if (!beginWriteSession()) { notePersistenceFailure(key); return; }
+    bool ok = g_prefs.putBytes(key, data, len) == len &&
+              g_prefs.getBytesLength(key) == len;
+    if (ok && len <= 256) {
+      uint8_t check[256];
+      ok = g_prefs.getBytes(key, check, len) == len &&
+           memcmp(check, data, len) == 0;
+    }
+    if (!ok) notePersistenceFailure(key);
     endWriteSessionIfNeeded();
   }
 
   void saveBool(const char* key, bool v) {
-    if (!beginWriteSession()) return;
-    g_prefs.putBool(key, v);
+    if (!beginWriteSession()) { notePersistenceFailure(key); return; }
+    const bool ok = g_prefs.putBool(key, v) == 1 &&
+                    g_prefs.getBool(key, !v) == v;
+    if (!ok) notePersistenceFailure(key);
     endWriteSessionIfNeeded();
   }
 
   void saveUInt(const char* key, uint32_t v) {
-    if (!beginWriteSession()) return;
-    g_prefs.putUInt(key, v);
+    if (!beginWriteSession()) { notePersistenceFailure(key); return; }
+    const bool ok = g_prefs.putUInt(key, v) == sizeof(uint32_t) &&
+                    g_prefs.getUInt(key, ~v) == v;
+    if (!ok) notePersistenceFailure(key);
     endWriteSessionIfNeeded();
   }
 
   void saveString(const char* key, const String& v) {
-    if (!beginWriteSession()) return;
-    g_prefs.putString(key, v);
+    if (!beginWriteSession()) { notePersistenceFailure(key); return; }
+    // Saving identical large JSON documents repeatedly wastes flash writes.
+    const bool same = g_prefs.isKey(key) && g_prefs.getString(key, "") == v;
+    const bool ok = same ||
+      (g_prefs.putString(key, v) == v.length() + 1 &&
+       g_prefs.isKey(key) && g_prefs.getString(key, "") == v);
+    if (!ok) notePersistenceFailure(key);
     endWriteSessionIfNeeded();
   }
 
   void saveU64(const char* keyHi, const char* keyLo, uint64_t v) {
     uint32_t hi=0, lo=0;
     unpack64(v, hi, lo);
-    if (!beginWriteSession()) return;
-    g_prefs.putUInt(keyHi, hi);
-    g_prefs.putUInt(keyLo, lo);
+    if (!beginWriteSession()) {
+      notePersistenceFailure(keyHi); notePersistenceFailure(keyLo); return;
+    }
+    const bool okHi = g_prefs.putUInt(keyHi, hi) == sizeof(uint32_t) &&
+                      g_prefs.getUInt(keyHi, ~hi) == hi;
+    const bool okLo = g_prefs.putUInt(keyLo, lo) == sizeof(uint32_t) &&
+                      g_prefs.getUInt(keyLo, ~lo) == lo;
+    if (!okHi) notePersistenceFailure(keyHi);
+    if (!okLo) notePersistenceFailure(keyLo);
     endWriteSessionIfNeeded();
   }
 
   void saveFloat(const char* key, float v) {
-    if (!beginWriteSession()) return;
-    g_prefs.putFloat(key, v);
+    if (!beginWriteSession()) { notePersistenceFailure(key); return; }
+    const float readBack = ([&]() {
+      const size_t count = g_prefs.putFloat(key, v);
+      if (count != sizeof(float)) return NAN;
+      return g_prefs.getFloat(key, NAN);
+    })();
+    if (!(readBack == v || (isnan(readBack) && isnan(v)))) notePersistenceFailure(key);
     endWriteSessionIfNeeded();
   }
 
@@ -785,6 +831,27 @@ static constexpr const char* K_EQ_BA_CH = "eq_ba_ch";
 }
 
 namespace ConfigStore {
+  uint32_t persistenceFailureCount() { return g_persistenceFailureCount; }
+  String lastPersistenceFailureKey() { return g_lastPersistenceFailureKey; }
+
+  bool hasPersistedConfiguration() {
+    // A single old/new key is sufficient to preserve the *whole* namespace.
+    // Do not infer an empty NVS from the absence of only eq_en/ot_en/dhw_en.
+#if ESP_IDF_VERSION_MAJOR >= 5
+    nvs_iterator_t it = nullptr;
+    const esp_err_t err = nvs_entry_find("nvs", "cfg", NVS_TYPE_ANY, &it);
+    const bool found = it != nullptr;
+    if (it) nvs_release_iterator(it);
+    // On a storage error, fail closed: never import an old snapshot over NVS.
+    return found || (err != ESP_OK && err != ESP_ERR_NVS_NOT_FOUND);
+#else
+    nvs_iterator_t it = nvs_entry_find("nvs", "cfg", NVS_TYPE_ANY);
+    const bool found = it != nullptr;
+    if (it) nvs_release_iterator(it);
+    return found;
+#endif
+  }
+
   void begin() {
     if (g_inited) return;
     g_inited = true;
@@ -853,6 +920,11 @@ namespace ConfigStore {
 
   bool getOtAllowRawWrite() { begin(); return g_otAllowRawWrite; }
   void setOtAllowRawWrite(bool v) { begin(); g_otAllowRawWrite = v; saveBool(K_OT_RAWW, v); }
+  String getOtAdvancedJson() { begin(); return g_otAdvancedJson; }
+  void setOtAdvancedJson(const String& json) {
+    begin(); g_otAdvancedJson = json.length() ? json : String("{}");
+    saveString(K_OT_ADV, g_otAdvancedJson);
+  }
 
   // BLE
   bool getBleEnabled() { begin(); return g_bleEnabled; }
