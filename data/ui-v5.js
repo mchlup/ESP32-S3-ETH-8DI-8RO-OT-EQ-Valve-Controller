@@ -454,6 +454,20 @@
     const p=tabs("diag",[
       ["system","⚙ Systém"],["network","◌ MQTT a síť"],["logs","≡ Logy"],["service","▦ Servis"]
     ],section);
+    const journal=card("Trvalá diagnostika ESP32",
+      "Záznamy do LittleFS přežijí restart. Změny OT, WS, sítě, pomalé smyčky, paměť a příčina restartu.",
+      "v5-diagnostics-journal");
+    cardBody(journal).innerHTML=
+      '<div class="v5-journal-actions">'+
+        '<button type="button" class="btn primary" id="diagJournalRefresh">Obnovit diagnostiku</button>'+
+        '<button type="button" class="btn" id="diagJournalDownload">Stáhnout aktuální log</button>'+
+        '<button type="button" class="btn danger" id="diagJournalClear">Smazat logy</button>'+
+      '</div>'+
+      '<div class="v5-journal-metrics" id="diagJournalStats" aria-live="polite">Čekám na diagnostiku zařízení…</div>'+
+      '<div class="v5-journal-archives" id="diagJournalArchives"></div>'+
+      '<pre id="diagJournalTail" class="v5-journal-tail" aria-label="Poslední záznamy diagnostiky">Načítám…</pre>'+
+      '<p class="muted">Údaje z poslední smyčky označují poslední vykonávaný modul, ne prokázanou příčinu restartu. Při nefunkčním LittleFS zůstávají jen omezené záznamy v RAM.</p>';
+    put(p.logs,journal);
     for(const d of details){
       const text=(d.querySelector("summary")?.textContent||"").toLowerCase();
       if(d.querySelector("#mqttHost")||text.includes("mqtt"))put(p.network,d);
