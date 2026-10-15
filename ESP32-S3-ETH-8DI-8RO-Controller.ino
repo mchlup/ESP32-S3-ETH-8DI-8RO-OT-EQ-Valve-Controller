@@ -19,6 +19,7 @@
 #include "BuzzerController.h"
 #include "PressureAlarmController.h"
 #include "EventLog.h"
+#include "DeviceDiagnostics.h"
 #include "HistoryBuffer.h"
 
 // -------------------- Console --------------------
@@ -266,6 +267,7 @@ void setup() {
   buzzerInit();// Buzzer + pressure alarm + diagnostics
   pressureAlarmInit();
   EventLog::begin();
+  DeviceDiagnostics::begin();
   HistoryBuffer::begin();
   EventLog::record("system", "boot", "startup");
   buzzerPlayStartup();
@@ -277,6 +279,7 @@ void setup() {
 }
 
 void loop() {
+  DeviceDiagnostics::startLoop();
   // Console
   while (Serial.available()) {
     char c = (char)Serial.read();
@@ -291,23 +294,42 @@ void loop() {
     }
   }
 
+  DeviceDiagnostics::markStage(DeviceDiagnostics::Stage::Inputs);
   inputUpdate();
+  DeviceDiagnostics::markStage(DeviceDiagnostics::Stage::Relays);
   relayUpdate();
+  DeviceDiagnostics::markStage(DeviceDiagnostics::Stage::Dallas);
   DallasController::loop();
   // Network and operator commands are serviced before potentially longer
   // OpenTherm transactions. The WebSocket loop is also called from the OT wait
   // hook, so manual valve commands remain responsive throughout polling.
+  DeviceDiagnostics::markStage(DeviceDiagnostics::Stage::Network);
   networkLoop();
+  DeviceDiagnostics::markStage(DeviceDiagnostics::Stage::Http);
   webPortalLoop();
+  DeviceDiagnostics::markStage(DeviceDiagnostics::Stage::OpenTherm);
   openthermLoop();// OpenTherm polling
+  DeviceDiagnostics::markStage(DeviceDiagnostics::Stage::Ble);
   bleLoop();// BLE client
+  DeviceDiagnostics::markStage(DeviceDiagnostics::Stage::History);
   HistoryBuffer::loop();
+  DeviceDiagnostics::markStage(DeviceDiagnostics::Stage::Temperatures);
   TemperatureManager::loop();// Central temperature registry (keeps roles consistent across program)
+  DeviceDiagnostics::markStage(DeviceDiagnostics::Stage::Ota);
   otaLoop();// OTA handler must run often (active when any IP interface is connected)
+  DeviceDiagnostics::markStage(DeviceDiagnostics::Stage::Mqtt);
   mqttLoop();// MQTT runtime: reconnect, subscriptions, periodic state and HA discovery.
+  DeviceDiagnostics::markStage(DeviceDiagnostics::Stage::Buzzer);
   buzzerLoop();
+  DeviceDiagnostics::markStage(DeviceDiagnostics::Stage::Pressure);
   pressureAlarmLoop();
+  DeviceDiagnostics::markStage(DeviceDiagnostics::Stage::Dhw);
   dhwLoop();// DHW / circulation priority control
+  DeviceDiagnostics::markStage(DeviceDiagnostics::Stage::Equitherm);
   equithermLoop();// Ekviterm (weather target + OT request)
+  DeviceDiagnostics::markStage(DeviceDiagnostics::Stage::Mixing);
   mixingValveLoop();// Mixing valve (A/B/AB + accumulator feedback)
+  DeviceDiagnostics::markStage(DeviceDiagnostics::Stage::Diagnostics);
+  DeviceDiagnostics::endLoop();
+  DeviceDiagnostics::service();
 }
