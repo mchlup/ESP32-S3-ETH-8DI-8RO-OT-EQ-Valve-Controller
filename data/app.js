@@ -538,6 +538,9 @@
       if(moreBtn)moreBtn.setAttribute("aria-current",["accu","opentherm","thermometers","io","diag"].includes(view)?"page":"false");
       if(changing && window.scrollY>0)window.scrollTo({top:0,behavior:"instant"});
       if(changing) log(`view -> ${view}`);
+      // Adapt fallback polling immediately when entering/leaving the live
+      // valve dashboard instead of waiting for the next WS reconnect.
+      if(changing) updateRefreshCadence();
       if(view === "opentherm") { void otScanRefresh(); void otProfileRefresh(); }
       if(view === "diag") { void mqttLoad({ silent:true }); void journalDiagnosticsLoad({silent:true}); }
       if(view === "thermometers" && !state.th?.loaded && !state.th?.načítání) { void thermoLoad({ silent:true }); }
@@ -589,9 +592,11 @@ function maybeAdoptPageOriginBase(reason="runtime", silent=false){
 
 
 function computeOfflinePollMs(){
-  const base = document.hidden ? 30000 : 10000;
-  const backvypnuto = Number(state?.net?.nextPollMs ?? 10000);
-  return Math.max(base, backvypnuto);
+  const liveValvePage = !document.hidden && ["overview","mixing"].includes(
+    document.querySelector(".section.active")?.id?.replace(/^view-/,""));
+  const base = document.hidden ? 30000 : (liveValvePage ? 5000 : 10000);
+  const backoff = Number(state?.net?.nextPollMs ?? base);
+  return Math.max(base, Number.isFinite(backoff) ? backoff : base);
 }
 
 const mixWsPending = new Map();
@@ -3326,6 +3331,32 @@ function otFmtRW(it){
   return (id === 1 || id === 56 || id === 57) ? "R/W" : "R";
 }
 
+function otRenderSupportedIds(){
+  const target=document.getElementById("otSupportedIds");
+  if(!target)return;
+  const profile=state.otAdv?.profile?.profile || {};
+  const scan=state.otAdv?.scan?.scan || {};
+  const items=Array.isArray(scan.items)?scan.items.filter(x=>x?.supported):[];
+  const byId=new Map(items.map(x=>[Number(x.id),x]));
+  const supported=otProfileSupportedSet(state.otAdv?.profile);
+  if(!supported.size){
+    target.innerHTML='<tr><td colspan="5" class="muted">Žádný dokončený scan. Spusťte pokročilý Scan Data-ID.</td></tr>';
+    return;
+  }
+  const names=new Map((Array.isArray(profile.items)?profile.items:[]).map(x=>[Number(x.id),x]));
+  target.innerHTML=[...supported].filter(Number.isFinite).sort((a,b)=>a-b).map(id=>{
+    const it=byId.get(id)||names.get(id)||{};
+    const name=escapeHtml(String(it.name||("ID "+id)));
+    const last=byId.get(id);
+    const value=last?escapeHtml(otFmtVal(last)):"—";
+    const description=escapeHtml(String(it.desc || (last?"Údaj z posledního scanu":"Podporováno podle profilu scanu")));
+    return '<tr><td class="mono">'+id+'</td><td><strong>'+name+
+      '</strong></td><td class="mono">'+escapeHtml(otFmtRW({id}))+
+      '</td><td class="mono">'+(it.isTemp?"°C":"Data-ID")+
+      '</td><td>'+value+'<div class="muted">'+description+'</div></td></tr>';
+  }).join("");
+}
+
 function otProfileSupportedSet(profileJson){
   const p = profileJson?.profile || profileJson?.scan || {};
   const items = Array.isArray(p?.items) ? p.items : [];
@@ -3355,9 +3386,11 @@ async function otProfileRefresh(){
     const j = await api.getJson("/api/opentherm/scan/profile");
     state.otAdv.profile = j;
     otApplyProfileVisibility(j);
+    otRenderSupportedIds();
   }catch(e){
     state.otAdv.profile = { ok:false, exists:false };
     otApplyProfileVisibility(state.otAdv.profile);
+    otRenderSupportedIds();
     log("otProfileRefresh error: " + (e.message || e));
   }
 }
@@ -3375,6 +3408,7 @@ function otRenderScan(scanJson){
   const sup = Number(scan.supportedCount ?? 0);
   const stateTxt = active ? `běží (${cur}/${end})` : (done ? `hotovo (supported: ${sup})` : "neaktivní");
   otSetBadge("otScanBadge", active ? "warn" : (done ? "good" : ""), "scan: " + stateTxt);
+  otRenderSupportedIds();
 
   const showAll = !!document.getElementById("otScanShowAll")?.checked;
   const items = Array.isArray(scan.items) ? scan.items : [];
@@ -4495,6 +4529,21 @@ async function serviceIoCall(payload){
 
     function applyMixingStatus(status){
       if(!status || typeof status !== "object") return;
+      // A slow detailed HTTP reply must not roll the 1 Hz live valve
+      // telemetry backwards. Keep the latest fast sensor, position and timer.
+      if(state.net?.lastMixLiveMs && Date.now()-state.net.lastMixLiveMs < 2500){
+        const current=state.mixStatus || {};
+        const liveFields=["aC","bC","abC","tankC","baseTargetC","targetC","errorC",
+          "feedForwardPct","positionPct","trendCPerMin","nextDecisionInMs",
+          "enabled","automaticAllowed","heatAvailable","state","reason","direction",
+          "positionTrusted","moving","movingManual","pulseRemainingMs",
+          "pulseElapsedMs","responsePending","floorProtectionActive",
+          "hydraulicModelValid","hydraulicModelReason","targetReachable",
+          "targetReachabilityReason"];
+        status={...status};
+        for(const key of liveFields)if(Object.prototype.hasOwnProperty.call(current,key))
+          status[key]=current[key];
+      }
       state.mixStatus = status;
       state.eqFast = state.eqFast || {};
       state.eqFast.mix = state.eqFast.mix || {};
@@ -4715,8 +4764,42 @@ async function serviceIoCall(payload){
       // BLE compact
       state.bleFast = (fast.ble && typeof fast.ble === "object") ? fast.ble : (state.bleFast || {});
 
-      // Equitherm compact
+      // Merge fast mixing data into the detailed snapshot before rendering.
+      // Otherwise the stale /api/mixing/status object masks every new 1 Hz WS
+      // position/temperature/countdown update for up to 30 seconds.
       state.eqFast = (fast.eq && typeof fast.eq === "object") ? fast.eq : (state.eqFast || {});
+      const liveMix = state.eqFast?.mix;
+      if(liveMix && typeof liveMix === "object"){
+        const current = {...(state.mixStatus || {})};
+        const numbers = {
+          ma:"aC",mb:"bC",mf:"abC",tk:"tankC",bt:"baseTargetC",
+          tf:"targetC",er:"errorC",ff:"feedForwardPct",pct:"positionPct",
+          prm:"pulseRemainingMs",elp:"pulseElapsedMs",tr:"trendCPerMin",
+          nd:"nextDecisionInMs"
+        };
+        const flags = {
+          en:"enabled",ac:"automaticAllowed",ha:"heatAvailable",
+          pt:"positionTrusted",mv:"moving",man:"movingManual",
+          rsp:"responsePending",fp:"floorProtectionActive",
+          hm:"hydraulicModelValid",rch:"targetReachable"
+        };
+        const strings = {
+          st:"state",rs:"reason",dir:"direction",
+          hmr:"hydraulicModelReason",rchr:"targetReachabilityReason"
+        };
+        for(const [short,long] of Object.entries(numbers)){
+          if(hasOwn(liveMix,short))current[long]=numOrNaN(liveMix[short]);
+        }
+        for(const [short,long] of Object.entries(flags)){
+          if(hasOwn(liveMix,short))current[long]=!!liveMix[short];
+        }
+        for(const [short,long] of Object.entries(strings)){
+          if(hasOwn(liveMix,short))current[long]=String(liveMix[short] ?? "");
+        }
+        state.mixStatus=current;
+        state.net = state.net || {};
+        state.net.lastMixLiveMs=Date.now();
+      }
       renderEquithermEnableControls();
       if(state.eqFast?.mix && typeof state.eqFast.mix === "object" && hasOwn(state.eqFast.mix, "pct")){
         state.accu.valve = numOrNaN(state.eqFast.mix.pct);
@@ -5628,7 +5711,7 @@ async function refresh(forceToast=false){
 
     if(state.net){
       state.net.failCount = 0;
-      state.net.nextPollMs = document.hidden ? 30000 : 10000;
+      state.net.nextPollMs = document.hidden ? 30000 : (["overview","mixing"].includes(getActiveView()) ? 5000 : 10000);
     }
     setApiHealth("good", state.ws?.připojeno ? "API: WebSocket" : "API: zařízení");
 

@@ -202,9 +202,16 @@
     const trend=card("Trend teploty kotle","Naměřená teplota vůči požadavku OpenTherm.","v5-overview-trend");
     cardBody(trend).innerHTML=trendMarkup();
     section.appendChild(reveal("Graf vývoje topné vody","Naměřená teplota a požadavek kotli, historie posledních 120 vzorků",trend));
-    if(original)section.appendChild(reveal("Rozšířený technický přehled",
-      "Detailní grafy, hodnoty čidel, AKU, TUV a všechny původní provozní údaje",original));
-    for(const n of originals)if(n!==original&&!n.classList.contains("page-hero"))section.appendChild(n);
+    // The old charts and metrics are no longer visible. Temporarily retain
+    // their existing DOM IDs in a hidden compatibility container until all
+    // legacy handlers are migrated; renderSample still accesses #bMode etc.
+    if(original){
+      const legacy=make("div","v5-legacy-compat");
+      legacy.hidden=true;
+      put(legacy,original);section.appendChild(legacy);
+    }
+    // Keep legacy container out of the live view; its unused controls are
+    // no longer needed for the new overview.
   }
 
   function heating() {
@@ -357,7 +364,12 @@
       '<div class="v5-tank-stat"><span>ROZDÍL HORNÍ / SPODNÍ TEPLOTY</span><strong id="v5-tank-delta">—</strong><small id="v5-tank-detail">Čekám na údaje čidel.</small>'+
       '<button type="button" class="btn" data-open-view="mixing">Směšovací ventil ↗</button></div></div>';
     section.appendChild(widget);
-    if(old.length)put(section,reveal("Technologické zobrazení a původní měřidla","Grafické zobrazení nádrže, ventilu a dalších provozních informací",...old));
+    // Preserve the original sensor elements off-screen for old refresh
+    // handlers; display only the redesigned vessel above.
+    if(old.length){
+      const compatibility=make("div","v5-legacy-compat");
+      compatibility.hidden=true;put(compatibility,...old);section.appendChild(compatibility);
+    }
   }
 
   function opentherm() {
@@ -384,7 +396,7 @@
     if(alert)put(p.cfg,alert);
     if(config)put(p.cfg,config);
     for(const d of ds)if(d!==alert&&d!==config)put(p.diag,d);
-    if(body)put(p.diag,reveal("Podrobnosti rozhraní","Další servisní údaje a nápověda",body));
+    if(body)put(p.diag,body);
     for(const n of old)if(n!==main)put(p.diag,n);
   }
 
@@ -433,7 +445,8 @@
       chips.innerHTML+='<div class="v5-relay"><span>R'+n+'</span><strong id="v5-r'+n+'">—</strong></div>';
     }
     wrap.appendChild(chips);section.appendChild(rel);
-    if(old.length)put(section,reveal("Tabulky a ovládání relé","Úplné ovládání vstupů, servisních příkazů a bezpečné zastavení",...old));
+    // Preserve the actual service controls in the Diagnostics section.
+    for(const node of old)if(node.querySelector?.("#serviceRelay"))put(byId("v5-diag-service")||byId("view-diag"),node);
   }
 
   function diagnostics() {

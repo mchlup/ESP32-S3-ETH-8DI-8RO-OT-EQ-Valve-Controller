@@ -278,3 +278,63 @@
 .therma-v5 .v5-journal-tail{min-height:170px;max-height:390px;overflow:auto;overflow-wrap:anywhere;white-space:pre-wrap;font:11px/1.6 var(--mono);padding:12px;border:1px solid var(--border);border-radius:11px;background:var(--bg2)}
 @media(max-width:850px){.therma-v5 .v5-journal-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:560px){.therma-v5 .v5-journal-metrics{grid-template-columns:1fr}}
+
+/* v5.4: realistic vertical thermal buffer instead of a rectangular 3-cell box. */
+.therma-v5 .v5-mix-aku-card .v5-mix-aku-layers{
+  position:relative;isolation:isolate;box-sizing:border-box;display:flex;
+  flex-direction:column;gap:0;align-self:center;
+  width:min(100%,280px);min-height:300px;margin:15px auto 12px;
+  padding:18px 9px 20px;overflow:visible;
+  border:3px solid rgba(120,143,165,.64);border-radius:49% 49% 42px 42px / 13% 13% 22px 22px;
+  background:linear-gradient(90deg,rgba(9,30,51,.24),rgba(255,255,255,.12) 16%,transparent 52%,rgba(9,30,51,.26));
+  box-shadow:0 15px 24px rgba(20,36,52,.15),inset 8px 0 13px rgba(13,44,72,.12),
+             inset -10px 0 14px rgba(11,39,62,.25);
+}
+.therma-v5 .v5-mix-aku-layers::before{
+  content:"";position:absolute;left:0;right:0;top:-9px;height:34px;z-index:4;
+  border:2px solid rgba(120,143,165,.7);border-radius:50%;
+  background:linear-gradient(180deg,rgba(233,240,245,.98),rgba(169,190,207,.9));
+  box-shadow:inset 0 5px 8px rgba(48,71,91,.18),0 3px 4px rgba(27,48,67,.15);
+}
+.therma-v5 .v5-mix-aku-layers::after{
+  content:"";position:absolute;left:0;right:0;bottom:-5px;height:27px;
+  border:2px solid rgba(120,143,165,.7);border-radius:50%;
+  background:linear-gradient(180deg,rgba(159,181,198,.8),rgba(225,237,245,.96));
+  box-shadow:0 4px 6px rgba(17,36,55,.13);
+}
+.therma-v5 .v5-mix-aku-layer{
+  position:relative;display:flex;align-items:center;justify-content:space-between;
+  flex:1;min-height:84px;gap:8px;padding:16px 19px;border-radius:0;
+  border:0;border-bottom:1px solid rgba(255,255,255,.5);
+  box-shadow:inset 17px 0 18px rgba(255,255,255,.23),inset -14px 0 18px rgba(14,40,66,.12);
+}
+.therma-v5 .v5-mix-aku-layer.top{
+  border-radius:45% 45% 0 0 / 22% 22% 0 0;
+  background:linear-gradient(90deg,#e49b57,#f5c28e 38%,#de9859);
+}
+.therma-v5 .v5-mix-aku-layer.mid{
+  background:linear-gradient(90deg,#c6b998,#eee0bc 38%,#c1ad86);
+}
+.therma-v5 .v5-mix-aku-layer.bot{
+  border-radius:0 0 39px 39px / 0 0 15px 15px;
+  border-bottom:0;background:linear-gradient(90deg,#73a5c5,#b2d7eb 38%,#659bc0);
+}
+.therma-v5 .v5-mix-aku-layer span{font-size:10px;letter-spacing:.06em}
+.therma-v5 .v5-mix-aku-layer strong{font-size:clamp(19px,2vw,29px);font-variant-numeric:tabular-nums}
+.therma-v5 .v5-mix-aku-metrics{width:100%;margin-top:auto}
+.therma-v5 #v5-mixing-live .v5-mix-aku-card .v5-card-body,
+.therma-v5 #view-overview .v5-mix-aku-card .v5-card-body{align-items:stretch}
+.therma-v5 .v5-ot-reading .table{width:100%}
+.therma-v5 #otSupportedIds td{vertical-align:top}
+.therma-v5 #otSupportedIds tr:hover{background:var(--bg2)}
+.therma-v5 #view-opentherm .v5-ot-scan-section{margin-top:12px}
+.therma-v5 #view-opentherm .v5-ot-scan-section > summary{padding:16px}
+@media(max-width:1450px){
+  .therma-v5 .v5-mix-aku-card{grid-column:1/-1}
+  .therma-v5 .v5-mix-aku-card .v5-mix-aku-layers{display:flex;flex-direction:column;width:min(100%,290px);min-height:290px}
+  .therma-v5 .v5-mix-aku-layer{flex-direction:row;text-align:left}
+}
+@media(max-width:560px){
+  .therma-v5 .v5-mix-aku-card .v5-mix-aku-layers{display:flex;flex-direction:column;min-height:270px;width:min(100%,260px)}
+  .therma-v5 .v5-mix-aku-layer{min-height:76px}
+}
