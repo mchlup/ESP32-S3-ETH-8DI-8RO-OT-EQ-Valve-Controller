@@ -1,4 +1,5 @@
 #include "EventLog.h"
+#include "DeviceDiagnostics.h"
 
 namespace {
   struct Entry {
@@ -26,6 +27,7 @@ namespace EventLog {
     cpy(e.level,sizeof(e.level),level?level:"info");
     g_head = (g_head + 1) % kCap;
     if (g_count < kCap) ++g_count;
+    DeviceDiagnostics::enqueue(e.source, e.event, e.detail, e.level);
   }
   void fillJson(JsonArray out, size_t maxItems) {
     const size_t count = (g_count < maxItems) ? g_count : maxItems;
