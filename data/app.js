@@ -3328,6 +3328,32 @@ function otFmtRW(it){
   return (id === 1 || id === 56 || id === 57) ? "R/W" : "R";
 }
 
+function otRenderSupportedIds(){
+  const target=document.getElementById("otSupportedIds");
+  if(!target)return;
+  const profile=state.otAdv?.profile?.profile || {};
+  const scan=state.otAdv?.scan?.scan || {};
+  const items=Array.isArray(scan.items)?scan.items.filter(x=>x?.supported):[];
+  const byId=new Map(items.map(x=>[Number(x.id),x]));
+  const supported=otProfileSupportedSet(state.otAdv?.profile);
+  if(!supported.size){
+    target.innerHTML='<tr><td colspan="5" class="muted">Žádný dokončený scan. Spusťte pokročilý Scan Data-ID.</td></tr>';
+    return;
+  }
+  const names=new Map((Array.isArray(profile.items)?profile.items:[]).map(x=>[Number(x.id),x]));
+  target.innerHTML=[...supported].filter(Number.isFinite).sort((a,b)=>a-b).map(id=>{
+    const it=byId.get(id)||names.get(id)||{};
+    const name=escapeHtml(String(it.name||("ID "+id)));
+    const last=byId.get(id);
+    const value=last?escapeHtml(otFmtVal(last)):"—";
+    const description=escapeHtml(String(it.desc || (last?"Údaj z posledního scanu":"Podporováno podle profilu scanu")));
+    return '<tr><td class="mono">'+id+'</td><td><strong>'+name+
+      '</strong></td><td class="mono">'+escapeHtml(otFmtRW({id}))+
+      '</td><td class="mono">'+(it.isTemp?"°C":"Data-ID")+
+      '</td><td>'+value+'<div class="muted">'+description+'</div></td></tr>';
+  }).join("");
+}
+
 function otProfileSupportedSet(profileJson){
   const p = profileJson?.profile || profileJson?.scan || {};
   const items = Array.isArray(p?.items) ? p.items : [];
@@ -3357,9 +3383,11 @@ async function otProfileRefresh(){
     const j = await api.getJson("/api/opentherm/scan/profile");
     state.otAdv.profile = j;
     otApplyProfileVisibility(j);
+    otRenderSupportedIds();
   }catch(e){
     state.otAdv.profile = { ok:false, exists:false };
     otApplyProfileVisibility(state.otAdv.profile);
+    otRenderSupportedIds();
     log("otProfileRefresh error: " + (e.message || e));
   }
 }
@@ -3377,6 +3405,7 @@ function otRenderScan(scanJson){
   const sup = Number(scan.supportedCount ?? 0);
   const stateTxt = active ? `běží (${cur}/${end})` : (done ? `hotovo (supported: ${sup})` : "neaktivní");
   otSetBadge("otScanBadge", active ? "warn" : (done ? "good" : ""), "scan: " + stateTxt);
+  otRenderSupportedIds();
 
   const showAll = !!document.getElementById("otScanShowAll")?.checked;
   const items = Array.isArray(scan.items) ? scan.items : [];
@@ -4497,6 +4526,21 @@ async function serviceIoCall(payload){
 
     function applyMixingStatus(status){
       if(!status || typeof status !== "object") return;
+      // A slow detailed HTTP reply must not roll the 1 Hz live valve
+      // telemetry backwards. Keep the latest fast sensor, position and timer.
+      if(state.net?.lastMixLiveMs && Date.now()-state.net.lastMixLiveMs < 2500){
+        const current=state.mixStatus || {};
+        const liveFields=["aC","bC","abC","tankC","baseTargetC","targetC","errorC",
+          "feedForwardPct","positionPct","trendCPerMin","nextDecisionInMs",
+          "enabled","automaticAllowed","heatAvailable","state","reason","direction",
+          "positionTrusted","moving","movingManual","pulseRemainingMs",
+          "pulseElapsedMs","responsePending","floorProtectionActive",
+          "hydraulicModelValid","hydraulicModelReason","targetReachable",
+          "targetReachabilityReason"];
+        status={...status};
+        for(const key of liveFields)if(Object.prototype.hasOwnProperty.call(current,key))
+          status[key]=current[key];
+      }
       state.mixStatus = status;
       state.eqFast = state.eqFast || {};
       state.eqFast.mix = state.eqFast.mix || {};
