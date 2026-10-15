@@ -241,7 +241,19 @@
       '<div><span>TEPLOTA VÝSTUPU AB</span><strong id="v5-mix-ab">—</strong><small id="v5-mix-error">Odchylka od cíle: —</small></div>'+
       '<div class="v5-feature-side"><span>Cílová teplota</span><strong id="v5-mix-goal">—</strong><span>Odhad polohy</span><strong id="v5-mix-pct">—</strong></div>');
     put(p.live,hero);
-    put(grid,stat,schema);put(p.live,grid);
+    const tankCard=card("Teploty akumulační nádrže","Aktuální teplotní vrstvy pro kontrolu dostupného tepla.","v5-mix-aku-card");
+    cardBody(tankCard).innerHTML=
+      '<div class="v5-mix-aku-layers" role="group" aria-label="Tři teplotní čidla akumulační nádrže">'+
+        '<div class="v5-mix-aku-layer top"><span>NAHOŘE</span><strong id="v5-mix-aku-top">—</strong></div>'+
+        '<div class="v5-mix-aku-layer mid"><span>UPROSTŘED</span><strong id="v5-mix-aku-mid">—</strong></div>'+
+        '<div class="v5-mix-aku-layer bot"><span>DOLE</span><strong id="v5-mix-aku-bottom">—</strong></div>'+
+      '</div>'+
+      '<div class="v5-mix-aku-metrics">'+
+        '<div><span>Rozvrstvení horní − spodní</span><strong id="v5-mix-aku-delta">—</strong></div>'+
+        '<div><span>Zdroj AKU pro regulaci</span><strong id="v5-mix-aku-source">—</strong></div>'+
+        '<div><span>Rezerva vůči cíli ventilu</span><strong id="v5-mix-aku-reserve">—</strong></div>'+
+      '</div><p id="v5-mix-aku-note" class="v5-mix-aku-note">Čekám na teploty čidel.</p>';
+    put(grid,stat,schema,tankCard);put(p.live,grid);
     if(config)put(p.cfg,config);
     if(calibrate)put(p.cal,calibrate);
     for(const n of original)if(n!==head && n!==stat && n!==schema && n!==config && n!==calibrate && !n.classList?.contains("mix-dashboard-grid"))put(p.cfg,n);
@@ -526,6 +538,18 @@
     const tank=finite(s.accu?.top,temps.tank_top,eq?.mix?.tk);
     const middle=finite(s.accu?.mid,temps.tank_mid);
     const bottom=finite(s.accu?.bot,temps.tank_bottom);
+    // Use the same live snapshot as the valve controller; absent DS18B20
+    // readings remain unavailable rather than being presented as 0 °C.
+    text("v5-mix-aku-top",temp(tank));
+    text("v5-mix-aku-mid",temp(middle));
+    text("v5-mix-aku-bottom",temp(bottom));
+    text("v5-mix-aku-delta",Number.isFinite(tank)&&Number.isFinite(bottom)?temp(tank-bottom):"—");
+    const selectedTank=finite(mix.tankC,eq.mix?.tk);
+    text("v5-mix-aku-source",temp(selectedTank));
+    text("v5-mix-aku-reserve",Number.isFinite(selectedTank)&&Number.isFinite(mixGoal)?temp(selectedTank-mixGoal):"—");
+    text("v5-mix-aku-note",[tank,middle,bottom].every(Number.isFinite)
+      ? "Čidla nahoře / uprostřed / dole • vybraný zdroj může být jiné čidlo než horní."
+      : "Nedostupná čidla jsou označena pomlčkou; zkontrolujte připojení a přiřazení DS18B20.");
     const hotWater=finite(temps.dhw_tank,temps.dhw,s.ot?.dhwTemp,sample.dhw);
     const pos=finite(mix.positionPct,eq?.mix?.pct,s.accu?.valve);
     const mode=modeValue(s);
