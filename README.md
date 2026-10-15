@@ -1,353 +1,174 @@
-# ESP32-S3-ETH-8DI-8RO-OT-EQ-Valve-Controller
+# THERMA · ESP32-S3 · Řízení vytápění, OpenTherm a směšovacího ventilu
 
-Firmware pro inteligentní řídicí jednotku pro topný systém založenou na desce Waveshare ESP32-S3-ETH-8DI-8RO. Projekt kombinuje Ethernet, WiFi, webový portál, OpenTherm komunikaci, DS18B20 senzory, BLE senzor, MQTT a řídící logiku pro vytápění, zásobování TUV a směšovací ventil.
+[![Platforma](https://img.shields.io/badge/Platform-ESP32--S3-0d9488)](https://www.espressif.com/en/products/socs/esp32-s3)
+[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-MQTT%20Discovery-41bdf5)](https://www.home-assistant.io/integrations/mqtt/)
+[![Licence](https://img.shields.io/badge/Licence-MIT-green)](LICENSE)
 
-Tento firmware je navržen pro ovládání a monitoring topného systému s následujícími funkcemi:
+Firmware pro **Waveshare ESP32-S3-ETH-8DI-8RO**, určený k řízení topného systému, akumulační nádrže, TUV, 3cestného směšovacího ventilu a komunikace s kotlem přes OpenTherm. Obsahuje živé webové UI THERMA, ekvitermní regulaci, senzory DS18B20 a BLE, MQTT/Home Assistant a trvalou provozní diagnostiku.
 
-- řízení výstupních relé pro topení, zásobování TUV a cirkulaci
-- práce s externími vstupy pro den/noční režim, požadavky a servis
-- integrace s OpenTherm kotlem
-- ekvitermní regulace a řízení směšovacího ventilu
-- podpora DS18B20 senzorů pro měření teplot
-- webový portál pro konfiguraci a diagnostiku
-- WiFiManager a OTA aktualizace
-- MQTT/Home Assistant integrace
-- BLE podpora pro meteorologický/venkovní sensor
-- logování událostí, historie a alarmy
+> **Stav ověření:** README popisuje připravený zdrojový kód na této větvi. Změny MQTT a alarmového buzzeru vyžadují kompilaci a hardwarové ověření. Výrobní nasazení do topné soustavy provádějte až po kontrole bezpečných stavů relé, správných směrů ventilu a vypínání při poruchách.
 
-## Obsah
+## Náhledy webového UI
 
-- [Přehled projektu](#přehled-projektu)
-- [Hardware a pinout](#hardware-a-pinout)
-- [Funkce a režimy](#funkce-a-režimy)
-- [Struktura projektu](#struktura-projektu)
-- [Začínáme](#začínáme)
-- [Konfigurace](#konfigurace)
-- [Konzolové příkazy](#konzolové-příkazy)
-- [Bezpečnostní poznámky](#bezpečnostní-poznámky)
-- [Licence](#licence)
+Skutečné obrázky uložené v repozitáři (nejde o nově generované ilustrace):
 
-## Přehled projektu
+### Přehled
+![THERMA – Přehled](docs/screenshots/web-winter-overview.webp)
 
-Jedná se o univerzální firmware pro ESP32-S3 s Ethernet rozhraním a 8 digitálními vstupy a 8 relé výstupy. Projekt je zaměřen na řízení topného systému s rozšířenou logikou pro:
+### Směšovací ventil
+![THERMA – Směšovací ventil](docs/screenshots/web-winter-mixing.webp)
 
-- topné těleso / cirkulační okruh
-- bojler / TUV a cirkulaci TUV
-- směšovací ventil (A/B/AB regulace s interlockem)
-- ekvitermní křivku a denní/noční režim
-- měření teplot na několika cestách
-- dálkový monitoring a vzdálené nastavení
+### Konfigurace ekvitermní křivky
+![THERMA – nastavení křivek](docs/screenshots/web-winter-tech-i3-settings.webp)
 
-V základním běhu firmware inicializuje síťové rozhraní, OpenTherm komunikaci, BLE klienta, webový portál, MQTT a řídicí moduly pro ekvitermii a směšovací ventil.
+> Snímky zachycují dříve uložené verze UI. V aktuální verzi mohou být některé prvky a uspořádání odlišné.
 
-## Hardware a pinout
+## Funkce
 
-Projekt je navržen pro desku Waveshare ESP32-S3-ETH-8DI-8RO a využívá:
+| Oblast | Podpora |
+|---|---|
+| Hardware | ESP32-S3, Ethernet + Wi-Fi, 8 digitálních vstupů a 8 relé (TCA9554) |
+| OpenTherm | Telemetrie kotle, požadavky CH/TUV, diagnostika Data-ID a scan |
+| Ekviterm | 2bodová / 4bodová křivka, komfort / útlum, limity, časový plán |
+| Směšovací ventil | Automatická regulace A/B/AB, impulzy, odhad polohy, interlock R1/R2, ruční STOP |
+| Akumulační nádrž | Teploty nahoře / uprostřed / dole, sledování teplotní rezervy |
+| TUV | Ohřev, cirkulace, plánovač, pulzní cirkulace, anti-legionella |
+| Teploměry | 1-Wire DS18B20; BLE venkovní meteorologický senzor |
+| Web | Responzivní přehled, konfigurace, grafy, živá komunikace přes WebSocket a HTTP fallback |
+| Integrace | MQTT state, availability, auto-discovery Home Assistant |
+| Provoz | OTA, watchdog telemetrie, sledování OT timeoutů, LittleFS diagnostický žurnál |
+| Signalizace | Startovní pípnutí a opakované alarmové **beep–pauza–beep** pro tlakové alarmy |
 
-- ESP32-S3 s Ethernet rozhraním
-- 8 digitálních vstupů (IN1 až IN8)
-- 8 reléových výstupů přes expander TCA9554
-- RGB LED na GPIO38
-- pasivní buzzer na GPIO46
-- I2C sběrnici pro RTC a IO expander
-- OneWire pro DS18B20 senzory
-- OpenTherm adaptér na GPIO47/48
+## Hardware a připojení
 
-### Základní pinové mapování
+Základní konfigurace pinů je v `config_pins.h`:
 
-```cpp
-// Digital inputs
-#define INPUT1_PIN 4
-#define INPUT2_PIN 5
-#define INPUT3_PIN 6
-#define INPUT4_PIN 7
-#define INPUT5_PIN 8
-#define INPUT6_PIN 9
-#define INPUT7_PIN 10
-#define INPUT8_PIN 11
+| Funkce | GPIO / rozhraní |
+|---|---|
+| Digitální vstupy IN1–IN8 | GPIO4–11 |
+| Relé R1–R8 | I²C expander TCA9554 |
+| I²C | SDA GPIO42, SCL GPIO41 |
+| OpenTherm | TX GPIO47, RX GPIO48 |
+| DS18B20 (4 sběrnice) | GPIO0, GPIO1, GPIO2, GPIO3 |
+| Pasivní buzzer | GPIO46, LEDC PWM 2 kHz |
+| RGB LED | GPIO38 |
 
-// I2C
-#define I2C_SCL_PIN 41
-#define I2C_SDA_PIN 42
+Výchozí role DS18B20: GPIO0 porty směšovače A/B/AB, GPIO3 horní/střední/spodní AKU, GPIO2 zpátečka, GPIO1 zpátečka cirkulace TUV. Role konkrétních čidel se přiřazují v konfiguraci.
 
-// RGB + buzzer
-#define RGB_LED_PIN 38
-#define BUZZER_PIN 46
+**Pozor:** R1 a R2 jsou vyhrazeny výhradně směšovacímu ventilu. Nepřepínejte je přímo z MQTT, servisních skriptů ani Home Assistantu. Před propojením s kotlem ověřte kompatibilitu a izolaci adaptéru OpenTherm.
 
-// DS18B20 OneWire
-#define DS18B20_PIN_1 0
-#define DS18B20_PIN_2 1
-#define DS18B20_PIN_3 2
-#define DS18B20_PIN_4 3
+## Webové rozhraní a API
 
-// OpenTherm
-#define OT_TX_PIN 47
-#define OT_RX_PIN 48
-```
+UI se nachází v `data/` a při běžném provozu se načítá z **LittleFS**:
 
-### Reléový mapování
+- `data/index.html` – hlavní aplikace a formuláře;
+- `data/app.js` – komunikace API a WS, řízení formulářů, grafy;
+- `data/ui-v5.js`, `data/ui-v5.css` – nové uspořádání a styl.
 
-Firmware pracuje s následující logikou relé:
+WebSocket typicky přináší průběžná data přibližně každou sekundu. Při výpadku používá UI HTTP fallback. Konfigurace se ukládá do NVS; souborový systém má také záložní konfiguraci `/config.json`.
 
-- R1 + R2 = směšovací ventil (motor OPEN/CLOSE)
-- R3 = přepínací 3cestný ventil TUV/CH
-- R4 = cirkulační čerpadlo TUV
-- R5 = požadavek kotle pro TUV
-- R6 = den/noc ekvitermní křivka na kotli
-- R7 = omezovací relé výkonu kotle
-- R8 = stykač topné tyče (akumulační nádrž)
+Příklady API: `/api/fast`, `/api/bootstrap`, `/api/mixing/status`, `/api/equitherm/status`, `/api/opentherm/status`, `/api/mqtt/status`, `/api/diagnostics/status`. Lokální servisní API nevystavujte přímo do veřejného internetu.
 
-### Vstupní mapování
+## MQTT / Home Assistant (HAOS / HASSIO)
 
-- IN1 = denní/noční křivka (ACTIVE = noční režim)
-- IN2 = požadavek TUV (ACTIVE)
-- IN3 = požadavek cirkulace (ACTIVE)
-- IN8 = servis: při bootu vynutí WiFiManager portal
+Nastavení najdete ve **webovém UI → Diagnostika → MQTT + Home Assistant**. Zadejte adresu a port brokeru, přihlašovací údaje (pokud jsou potřeba), zapněte MQTT a `Home Assistant` + `MQTT Discovery`, uložte konfiguraci.
 
-## Funkce a režimy
+Zařízení používá témata v následujícím tvaru (výchozí `baseTopic=esp32-controller`):
 
-### 1. OpenTherm integrace
+| Téma | Obsah |
+|---|---|
+| `esp32-controller/state` | Jeden JSON snímek provozních hodnot (retained) |
+| `esp32-controller/availability` | `online` / `offline` (retained, LWT) |
+| `esp32-controller/info` | Základní informace o zařízení |
+| `esp32-controller/cmd/#` | Podporované servisní a uživatelské příkazy |
+| `homeassistant/<component>/<nodeId>/<entity>/config` | Retained MQTT Discovery |
 
-Firmware komunikuje s kotlem přes OpenTherm protokol. V kódu jsou implementovány funkce pro:
+### Automaticky zveřejňované hodnoty
 
-- polling stavu kotle
-- skenování podporovaných Data ID
-- diagnostiku a JSON status
-- přístup k parametrům kotle a datům teplot
+Kód vystavuje jako MQTT JSON a/nebo HA Discovery zejména:
 
-Některé příkazy umožňují:
+- **Teploty:** venkovní, přívod, zpátečka, zásobník TUV, zpátečka TUV a tři vrstvy AKU.
+- **Směšovací ventil:** poloha, teploty A/B/AB, cílová a základní teplota, regulační odchylka, trend, feed-forward, směr pohybu, čas do dalšího rozhodnutí, zbývající impulz a stav regulace.
+- **OpenTherm:** stav linky, plamen, aktivní vytápění/TUV, teploty kotle/zpátečky/TUV/venkovní/pokojové, požadavky setpointů, tlak, modulace a výkon; další hodnoty jsou přítomné v MQTT JSON i pokud pro ně není vytvořena samostatná entita HA.
+- **Ekviterm:** vypočtené cíle, režim, stav a důvod regulace.
+- **TUV:** požadavek a aktivní ohřev, teplota/cíl, cirkulace, fáze a anti-legionella.
+- **Alarm tlaku:** aktivní / nízký / vysoký tlak a aktuální hodnota.
+- **Systém:** ethernet/Wi-Fi, relé R3–R8 jako přepínače, všech 8 vstupů jako binární senzory, RAM a doba provozu, BLE vlhkost/tlak.
 
-- `OT` – status OpenTherm v JSON
-- `OTSCAN START` – zahájit skenování datových ID
-- `OTSCAN ALL` – skenování s rozšířeným souborem dat
-- `OTSCAN STATUS` – zobrazení stavu skenování
-- `OTSCAN STOP` – zastavení skenování
+**Rozlišení:** MQTT JSON obsahuje více položek než autodetekce jednotlivých entit; předchozí implementace publikovala jen zhruba deset číselných senzorů a několik přepínačů. Tento update významně rozšiřuje pokrytí, ale **nepřevádí automaticky všechna pole komplexních stavových objektů na samostatné HA entity**. Nedostupné fyzické hodnoty mohou být `null`.
 
-### 2. Ekvitermní regulace
-
-Projekt obsahuje modul `EquithermController`, který řídí:
-
-- denní a noční režim
-- výpočet cílové teploty podle venkovní teploty
-- přepínání mezi denním a nočním režimem
-- integraci s OpenTherm požadavkem a stavy systému
-
-Příkazy:
-
-- `EQ` – status ekvitermní logiky
-- `EQ MODE DAY` / `NIGHT` / `AUTO`
-
-### 3. Směšovací ventil
-
-Firmware obsahuje samostatný kontroler pro směšovací ventil s adaptivním řízením:
-
-- práce s A/B a AB provozem
-- interlock mezi relé R1/R2
-- řízení podle teplotních rolí a zpoždění
-- přehled stavu v JSON
-
-### 4. TUV, cirkulace a DHW
-
-Modul `DhwController` řídí:
-
-- přístup k teplotám nádrže a zpátečky
-- cirkulaci zbytkového okruhu
-- prioritizaci TUV vůči vytápění
-- alarmy a diagnostiku
-
-### 5. DS18B20 teplotní sítě
-
-Firmware pracuje se čtyřmi OneWire zónami pro DS18B20 senzory. Teploty se centralizují přes `TemperatureManager`, který je schopen:
-
-- přiřadit senzory do rolí (např. topná nádrž, zpátečka, venkovní teplota, TUV)
-- udržovat konzistentní hodnoty v čase
-- používat data z Dallas senzoru nebo příchozí datové zdroje
-
-### 6. Webový portál a konfigurace
-
-Webový portál je součástí firmware a slouží pro přehled stavu systému a konfiguraci. Obsahuje:
-
-- webové rozhraní pro monitorování a konfiguraci
-- API pro operace z prohlížeče
-- možnost konfigurovat NVS / runtime nastavení
-- přístup přes WiFi nebo Ethernet
-
-Pokud je při bootu aktivní vstup IN8, firmware vynutí konfiguraci přes WiFiManager portal.
-
-### 7. MQTT a Home Assistant
-
-Firmware podporuje MQTT komunikaci a publikaci dat pro domovské automatizační systémy. To umožňuje integraci s Home Assistant nebo jinými brokerovými řešeními.
-
-### 8. BLE klient
-
-Je podporována BLE komunikace se senzory, zejména s platformou ESP-Meteostanice-Outdoor. To umožňuje získávat venkovní teplotu a další meteorologická data přes BLE bez nutnosti přímého připojení k externímu cloudu.
-
-### 9. OTA a diagnostika
-
-Projekt obsahuje:
-
-- OTA aktualizace přes síť
-- logování událostí (`EventLog`)
-- historii naměřených hodnot (`HistoryBuffer`)
-- signální buzzer pro stavové a alarmové indikace
-- tlakové alarmy a další ochranné mechanizmy
-
-## Struktura projektu
-
-Hlavní soubory v kořeni repozitáře:
+### Příkazy (příklad)
 
 ```text
-.
-├── ESP32-S3-ETH-8DI-8RO-Controller.ino   # hlavní Arduino sketch
-├── config_pins.h                          # mapování pinů a hardware
-├── Features.h                             # přepínání funkcí
-├── FeatureNetwork.h                       # WiFiManager / síť
-├── FeatureOpenTherm.h                     # OpenTherm
-├── FeatureBle.h                           # BLE
-├── FeatureWebPortal.h                     # webový portál
-├── FeatureOta.h                           # OTA
-├── FeatureEquitherm.h                     # ekviterm
-├── ConfigStore.h                          # persistované nastavení
-├── ConfigRuntime.cpp / .h                 # runtime konfigurace
-├── NetworkController.*                    # síť a WiFiManager
-├── OpenThermController.*                  # OpenTherm logika
-├── EquithermController.*                  # ekvitermní regulace
-├── MixingValveController.*                 # směšovací ventil
-├── DhwController.*                        # TUV a cirkulace
-├── TemperatureManager.*                   # teplotní registry
-├── DallasController.*                     # DS18B20 senzory
-├── MqttController.*                       # MQTT
-├── BleController.*                        # BLE klient
-├── WebPortalController.*                  # webová aplikace
-├── RelayController.*                       # relé a interlocky
-├── InputController.*                      # vstupy a callbacky
-├── BuzzerController.*                      # signalizace
-├── PressureAlarmController.*               # tlakovou alarmy
-├── EventLog.*                             # logování
-├── HistoryBuffer.*                         # krátká historie
-├── partitions.csv                          # oddíly flash paměti
-├── LICENSE                                 # MIT licence
-├── README.md                               # dokumentace projektu
-├── docs/                                   # dokumentace a screenshoty
-├── data/                                   # data web portálu / assety
-└── ...
+esp32-controller/cmd/equitherm/mode/set  auto|day|night
+esp32-controller/cmd/dhw/circ/set       ON|OFF
+esp32-controller/cmd/dhw/heat/set       ON|OFF|BOOST
+esp32-controller/cmd/mix/pulse/set      A|B|STOP
+esp32-controller/cmd/relay/3/set       ON|OFF|TOGGLE
 ```
 
-## Začínáme
+**Bezpečnost:** příkazy mohou ovlivnit topnou soustavu. Zajistěte autentizaci brokeru, omezení oprávnění MQTT témat a oddělení sítě. HA entity relé R1/R2 se výslovně nepublikují.
 
-### Požadavky
+### Kontrola při problému s Discovery
 
-- ESP32 Arduino core pro ESP32-S3
-- Arduino IDE nebo PlatformIO
-- správné připojené senzory a relé na desce
-- stabilní napájení pro reléové výstupy a čidla
-- síťové připojení (Ethernet nebo WiFi)
+1. Ověřte funkčnost MQTT brokeru v HAOS a logy integrace MQTT.
+2. Zkontrolujte `/api/mqtt/status`: `connected`, `discoveryPublished`, `discoveryQueued`, `discoveryFailed`.
+3. Projděte retained témata `homeassistant/#` a `esp32-controller/state`. `discoveryPublished` znamená úspěšné zařazení publikací do MQTT klienta, nikoli potvrzení, že se každá entita vytvořila v HA.
+4. Při přejmenování `nodeId` mohou staré retained discovery entity zůstat v brokeru; vyčistěte je cíleně.
 
-### Postup flashování
+## Akustický alarm (buzzer)
 
-1. Otevřete soubor `ESP32-S3-ETH-8DI-8RO-Controller.ino` v Arduino IDE nebo PlatformIO.
-2. Zvolte správnou desku ESP32-S3 a port sériového připojení.
-3. Ujistěte se, že jsou nainstalovány všechny závislosti požadované projektem.
-4. Flashujte firmware do desky.
-5. Po prvním startu zkontrolujte sériový monitor.
-6. Pokud je aktivní IN8, firmware spustí WiFiManager portal.
+`BuzzerController` používá LEDC na **GPIO46 / 2 kHz**. Při startu zazní jednorázový krátký signál.
 
-### První start
+Při aktivním alarmu tlaku následuje cyklický vzor:
 
-Po spuštění se inicializují:
+| Krok | Délka |
+|---|---:|
+| Beep | 450 ms |
+| Pauza | 200 ms |
+| Beep | 450 ms |
+| Pauza mezi cykly | 900 ms |
 
-- vstupy a relé
-- síťové rozhraní
-- OpenTherm a BLE moduly
-- webový portal
-- MQTT a ekvitermní logika
-- TUV a směšovací ventil
+Signalizace končí po odeznění nebo vypnutí alarmu. Oprava brání resetování zvukového vzoru v každém průchodu `pressureAlarmLoop()`; díky tomu se provede skutečně **beep–pauza–beep**, nikoli nepřerušený tón.
 
-V sériovém monitoru lze následně používat základní příkazy.
+Tlakový alarm porovnává platnou hodnotu tlaku získanou přes OpenTherm s limity a hysterezí. **Neplatné nebo nedostupné tlakové čidlo samo o sobě nespouští akustický tlakový alarm**; stav je `sensor_invalid`. Signál lze servisně otestovat přes `/api/service/io` (povel buzzer warning/off).
 
-## Konfigurace
+## Diagnostika a LittleFS
 
-### WiFiManager
+`DeviceDiagnostics.cpp/.h` ukládá JSONL události do `/diagnostics/events.jsonl`, s rotací archivů. Zaznamenává příčiny restartu, pomalé části hlavní smyčky, chyby OpenTherm, změny sítě/WS a stav RAM. V UI otevřete **Diagnostika → Logy**; další informace: [Trvalá diagnostika](docs/PERSISTENT_DIAGNOSTICS.md).
 
-Po prvním spuštění se zařízení může připojit k WiFi přes konfiguraci. Pokud je aktivní servisní vstup IN8, firmware přejde do konfiguračního portálu pro nastavení připojení.
+Při selhání připojení LittleFS se diagnostické soubory záměrně **automaticky nemažou/formátováním**.
 
-### Webový portál
+## Instalace a aktualizace
 
-Webový portál slouží k:
+1. Stáhněte repozitář a otevřete `ESP32-S3-ETH-8DI-8RO-Controller.ino` ve správně nakonfigurovaném Arduino IDE s balíčkem ESP32-S3 a požadovanými knihovnami.
+2. Zkontrolujte `config_pins.h`, připojení OpenTherm a přiřazení čidel.
+3. Nahrajte **firmware** a obsah složky **`data/`** do LittleFS, aby webové UI odpovídalo firmware.
+4. Ve webovém UI nakonfigurujte síť, OpenTherm, ekvitermní křivky, směšovač a TUV.
+5. Ověřte zachování konfigurace po restartu a chování v případě odpojení kotle/senzorů.
+6. Před připojením k reálné soustavě proveďte kontrolu výstupů a test bezpečných stavů.
 
-- přístupu ke stavu topného systému
-- zobrazení teplot a veličin
-- úpravám základních parametrů
-- diagnostice a historii
+Aktualizace přes OTA / webové UI je podporována podle nastavení zařízení a rozdělení flash paměti. Vyvarujte se přerušení napájení během zápisu firmware či filesystemu.
 
-### Runtime a NVS
-
-Firmware ukládá konfiguraci do NVS / runtime konfigurace, která se používá během provozu. Nejdůležitější parametry se aktualizují v době běhu bez nutnosti opětovného flashování.
-
-## Konzolové příkazy
-
-Firmware podporuje základní ovládací příkazy přes sériový monitor:
+## Projektová struktura
 
 ```text
-HELP
-STATE
-INPUTS
-TEMP
-OT
-OTSCAN START
-OTSCAN ALL
-OTSCAN STATUS
-OTSCAN STOP
-BLE
-OTA
-EQ
-MIX
-EQ MODE DAY
-EQ MODE NIGHT
-EQ MODE AUTO
-WIFI PORTAL
-R3 ON
-R3 OFF
-R3 TOGGLE
+ESP32-S3-ETH-8DI-8RO-Controller.ino   hlavní smyčka
+ConfigStore.* / ConfigRuntime.*      NVS a runtime konfigurace
+OpenTherm* / OTBusESP32Pro.*          OpenTherm transport a stav kotle
+EquithermController.*                2/4bodové topné křivky
+MixingValveController.*              řízení směšovacího ventilu
+DhwController.*                       ohřev TUV a cirkulace
+TemperatureManager.* / Dallas*       centrální registry čidel
+MqttController.*                      MQTT a HA Discovery
+BuzzerController.*                    zvuková signalizace
+PressureAlarmController.*             tlakové alarmy
+DeviceDiagnostics.* / EventLog.*     provozní diagnostika
+WebPortalController.*                 HTTP API a WebSocket
+data/                                  webová aplikace a LittleFS
+docs/screenshots/                     náhledy UI
 ```
-
-### Význam některých příkazů
-
-- `STATE` – zobrazení stavu relé
-- `INPUTS` – raw a logické stavy vstupů
-- `TEMP` – přehled teplot pro jednotlivé role
-- `OT` – JSON status OpenTherm komunikace
-- `BLE` – status BLE klienta
-- `OTA` – status OTA režimu
-- `EQ` – status ekvitermní logiky
-- `MIX` – status směšovacího ventilu
-
-Důležité: relé R1 a R2 jsou vyhrazené pro směšovací ventil. Jejich přímé ovládání přes relé příkazy není doporučeno; použijte nástroje pro ruční řízení ventilu.
-
-## Bezpečnostní poznámky
-
-- Projekt pracuje s relé a topným systémem – vždy dbejte na bezpečné zapojení a ochranu obvodů.
-- Přímé ovládání relé R1/R2 je omezeno a je řízeno interlockem směšovacího ventilu.
-- Před připojením k kotli nebo zařízení s výkonem zvažte galvanickou izolaci a odporové ochrany.
-- Připojení k měřicím a řídicím prvkům provádějte podle konkrétního zařízení a výrobce.
-- Firmware je určena pro zkušené konstrukce a servisní techniky.
 
 ## Licence
 
-Tento projekt je licencován pod MIT licencí. Podrobnosti najdete v souboru `LICENSE`.
-
-## Shrnutí
-
-Tento firmware je vhodný pro pokročilé domácí či komerční topné systémy, kde je potřeba:
-
-- řídit kotel přes OpenTherm
-- pracovat s DS18B20 senzory a ekvitermní logikou
-- ovládat mixovací ventil a cirkulaci TUV
-- monitorovat a upravovat systém přes webový portál nebo MQTT
-- připojit další diagnostiku a senzory přes BLE nebo Ethernet/WiFi
-
-Pokud jste v projektu noví, doporučuje se nejprve ověřit hardware pinout, správně připojit senzory a zkontrolovat sériový monitor po prvním spuštění.
-
----
-
-Tento README pokrývá základní návrh funkčnosti, architekturu a konfiguraci projektu. Pro produkční nasazení je vhodné doplnit ještě konkrétní schéma zapojení, fotodokumentaci, seznam použitých senzorů a přesnou konfiguraci pro konkrétní typ kotle a topného systému.
+[MIT](LICENSE). Projekt je zaměřen na zkušené techniky a vývojáře; nejsou tím nahrazeny nezávislé bezpečnostní ochrany kotle, tlakové soustavy nebo elektroinstalace.
