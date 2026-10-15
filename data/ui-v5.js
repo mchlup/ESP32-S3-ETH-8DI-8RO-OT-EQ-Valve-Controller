@@ -432,6 +432,14 @@
     const section=byId("view-io");if(!section)return;
     const old=Array.from(section.children);
     section.replaceChildren();
+    // Keep the original emergency stop action visible. It was previously
+    // discarded with the legacy I/O panel, although app.js still binds it.
+    const stop=byId("ioAllOff");
+    if(stop){
+      const actionBar=make("div","v5-io-safety-actions");
+      actionBar.appendChild(stop);
+      section.appendChild(actionBar);
+    }
     const board=card("Digitální vstupy","Vstup IN1 přepíná komfort / útlum, IN2 a IN3 řídí příslušné požadavky.","v5-io-panel");
     cardBody(board).innerHTML='<div class="v5-digital-grid">'+
       '<div class="v5-digital"><span>IN1 <small>Vytápění</small></span><strong id="v5-in1">—</strong></div>'+
