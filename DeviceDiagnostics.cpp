@@ -22,12 +22,14 @@ const char* const kPaths[] = {
   "/diagnostics/events.3.jsonl"
 };
 
+// POD without constructors/initializers: RTC_NOINIT contents must survive
+// the C++ global initialization phase on watchdog / software reset.
 struct Breadcrumb {
-  uint32_t magic = 0;
-  uint32_t boot = 0;
-  uint32_t atMs = 0;
-  uint8_t stage = 0;
-  uint8_t reserved[3] = {};
+  uint32_t magic;
+  uint32_t boot;
+  uint32_t atMs;
+  uint8_t stage;
+  uint8_t reserved[3];
 };
 RTC_NOINIT_ATTR Breadcrumb g_rtc;
 
